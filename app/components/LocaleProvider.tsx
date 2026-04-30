@@ -23,12 +23,22 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Detect locale on mount
+    // Priority: saved preference → geo cookie (from IP) → browser language
     const saved = localStorage.getItem("fastcaption-locale");
     if (saved === "th" || saved === "en") {
       setLocaleState(saved);
     } else {
-      const detected = navigator.language.startsWith("th") ? "th" : "en";
-      setLocaleState(detected);
+      // Check geo-locale cookie set by middleware (based on IP country)
+      const geoCookie = document.cookie
+        .split("; ")
+        .find((c) => c.startsWith("geo-locale="))
+        ?.split("=")[1];
+      if (geoCookie === "th" || geoCookie === "en") {
+        setLocaleState(geoCookie);
+      } else {
+        const detected = navigator.language.startsWith("th") ? "th" : "en";
+        setLocaleState(detected);
+      }
     }
     setMounted(true);
   }, []);
