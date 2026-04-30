@@ -64,7 +64,7 @@ export default function HomePage() {
           alt="FastCaption"
           width={64}
           height={64}
-          style={{ borderRadius: "16px", marginBottom: "20px" }}
+          style={{ display: "block", margin: "0 auto 20px", borderRadius: "16px" }}
         />
 
         <div style={{
