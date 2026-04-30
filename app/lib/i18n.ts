@@ -17,12 +17,12 @@ export const translations: Record<Locale, Record<string, string>> = {
     "nav.signOut": "Sign Out",
 
     // ── Home ──
-    "home.badge": "⚡ Powered by WhisperX AI",
+    "home.badge": "Powered by WhisperX AI",
     "home.title1": "Convert Audio to Subtitles",
     "home.title2": "with AI in Seconds",
     "home.desc": "Upload an audio or video file — get transcript JSON, SRT, TXT and TikTok-style .ASS subtitles ready to use instantly",
-    "home.cta": "🚀 Start Transcribing Free",
-    "home.pricing": "💎 View Pricing",
+    "home.cta": "Try Free — 5,000 Credits",
+    "home.pricing": "View Pricing",
     "home.feat1.title": "High-Accuracy Transcription",
     "home.feat1.desc": "Uses WhisperX with word-level timestamps for precise alignment",
     "home.feat2.title": "TikTok-Style ASS Subtitles",
@@ -35,9 +35,9 @@ export const translations: Record<Locale, Record<string, string>> = {
     "home.feat5.desc": "Already have a script? Let AI match timestamps to your audio without changing words",
     "home.feat6.title": "Multiple Export Formats",
     "home.feat6.desc": "Download as JSON, SRT, TXT or ASS — all jobs saved in your Dashboard",
-    "home.bonus.title": "Sign up and get {credits} free!",
-    "home.bonus.desc": "≈ 25 minutes — no credit card required",
-    "home.bonus.cta": "Get Started Free →",
+    "home.bonus.title": "Sign up and get {credits} credits free!",
+    "home.bonus.desc": "≈ 25 minutes of transcription — no credit card required",
+    "home.bonus.cta": "Start Free Now →",
 
     // ── Login ──
     "login.title": "Sign In",
@@ -183,12 +183,12 @@ export const translations: Record<Locale, Record<string, string>> = {
     "nav.signOut": "ออกจากระบบ",
 
     // ── Home ──
-    "home.badge": "⚡ Powered by WhisperX AI",
+    "home.badge": "Powered by WhisperX AI",
     "home.title1": "แปลงเสียงเป็นซับไทเทิล",
     "home.title2": "ด้วย AI ในไม่กี่วินาที",
     "home.desc": "อัพโหลดไฟล์เสียงหรือวิดีโอ — รับ transcript JSON, SRT, TXT และ ซับ .ASS สไตล์ TikTok พร้อมใช้ทันที",
-    "home.cta": "🚀 เริ่ม Transcribe ฟรี",
-    "home.pricing": "💎 ดูราคา",
+    "home.cta": "ลองฟรี — 5,000 Credits",
+    "home.pricing": "ดูราคา",
     "home.feat1.title": "Transcribe ถูกต้องสูง",
     "home.feat1.desc": "ใช้ WhisperX ร่วมกับ word-level timestamps สำหรับการ align ที่แม่นยำ",
     "home.feat2.title": "ซับ ASS สไตล์ TikTok",
@@ -202,8 +202,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "home.feat6.title": "Export หลายรูปแบบ",
     "home.feat6.desc": "ดาวน์โหลดเป็น JSON, SRT, TXT หรือ ASS — ทุกงานเก็บใน Dashboard",
     "home.bonus.title": "สมัครใหม่รับ {credits} credits ฟรี!",
-    "home.bonus.desc": "≈ 25 นาที — ไม่ต้องใส่บัตรเครดิต",
-    "home.bonus.cta": "เริ่มใช้งานฟรี →",
+    "home.bonus.desc": "≈ 25 นาทีของการ transcribe — ไม่ต้องใส่บัตรเครดิต",
+    "home.bonus.cta": "เริ่มใช้ฟรีเลย →",
 
     // ── Login ──
     "login.title": "เข้าสู่ระบบ",

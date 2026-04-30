@@ -86,6 +86,9 @@ export function Navbar() {
         <Link
           href="/"
           style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
             fontWeight: 800,
             fontSize: "1.2rem",
             letterSpacing: "-0.5px",
@@ -96,6 +99,13 @@ export function Navbar() {
             flexShrink: 0,
           }}
         >
+          <img
+            src="/favicon-32x32.png"
+            alt=""
+            width={24}
+            height={24}
+            style={{ borderRadius: "4px", flexShrink: 0 }}
+          />
           FastCaption
         </Link>
 

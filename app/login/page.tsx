@@ -84,7 +84,13 @@ export default function LoginPage() {
     <div className="page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 60px)" }}>
       <div className="card" style={{ width: "100%", maxWidth: "420px", padding: "40px", textAlign: "center" }}>
         {/* Header */}
-        <div style={{ marginBottom: "8px", fontSize: "2.5rem" }}>⚡</div>
+        <img
+          src="/android-chrome-192x192.png"
+          alt="FastCaption"
+          width={56}
+          height={56}
+          style={{ marginBottom: "8px", borderRadius: "14px" }}
+        />
         <h1 style={{ fontSize: "1.8rem", marginBottom: "8px" }}>{t("login.title")}</h1>
         <p style={{ color: "var(--text-secondary)", marginBottom: "32px", fontSize: "0.95rem" }}>
           {t("login.desc")}
