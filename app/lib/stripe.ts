@@ -20,7 +20,8 @@ export const CREDIT_PACKAGES = [
     name: "Starter",
     credits: 10000,
     priceThb: 99,
-    description: "≈ 50 นาที",
+    description: "≈ 50 min",
+    descTh: "≈ 50 นาที",
     popular: false,
   },
   {
@@ -28,7 +29,8 @@ export const CREDIT_PACKAGES = [
     name: "Pro",
     credits: 50000,
     priceThb: 399,
-    description: "≈ 4 ชั่วโมง",
+    description: "≈ 4 hrs",
+    descTh: "≈ 4 ชั่วโมง",
     popular: true,
   },
   {
@@ -36,7 +38,8 @@ export const CREDIT_PACKAGES = [
     name: "Business",
     credits: 200000,
     priceThb: 1299,
-    description: "≈ 16 ชั่วโมง",
+    description: "≈ 16 hrs",
+    descTh: "≈ 16 ชั่วโมง",
     popular: false,
   },
 ] as const;
@@ -115,9 +118,26 @@ export function convertPrice(priceThb: number, currency: SupportedCurrency) {
   };
 }
 
-/** Get Stripe payment methods based on currency */
+/** Get Stripe payment methods based on currency.
+ * 
+ * Google Pay & Apple Pay are automatically enabled when "card" is included.
+ * Stripe shows only methods available in the customer's region.
+ */
 export function getPaymentMethods(currency: SupportedCurrency): Stripe.Checkout.SessionCreateParams.PaymentMethodType[] {
-  if (currency === "thb") return ["card", "promptpay"];
-  return ["card"];
+  switch (currency) {
+    case "thb":
+      return ["card", "promptpay"];
+    case "jpy":
+      return ["card", "alipay"];
+    case "cny":
+      return ["card", "alipay", "wechat_pay"];
+    case "eur":
+      return ["card", "bancontact", "ideal", "sofort"];
+    case "sgd":
+    case "myr":
+      return ["card", "alipay", "grabpay"];
+    default:
+      return ["card"];
+  }
 }
 

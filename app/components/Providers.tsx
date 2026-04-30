@@ -1,7 +1,12 @@
 "use client";
 
-import { SessionProvider } from "next-auth/react";
+import { LocaleProvider } from "./LocaleProvider";
 
+// No session provider needed — Supabase Auth uses cookies managed by middleware
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <SessionProvider>{children}</SessionProvider>;
+  return (
+    <LocaleProvider>
+      {children}
+    </LocaleProvider>
+  );
 }

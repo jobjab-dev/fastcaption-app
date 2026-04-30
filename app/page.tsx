@@ -1,6 +1,20 @@
+"use client";
+
 import Link from "next/link";
+import { useLocale } from "./components/LocaleProvider";
 
 export default function HomePage() {
+  const { t } = useLocale();
+
+  const features = [
+    { icon: "🎤", title: t("home.feat1.title"), desc: t("home.feat1.desc") },
+    { icon: "🎬", title: t("home.feat2.title"), desc: t("home.feat2.desc") },
+    { icon: "🌐", title: t("home.feat3.title"), desc: t("home.feat3.desc") },
+    { icon: "⚡", title: t("home.feat4.title"), desc: t("home.feat4.desc") },
+    { icon: "🔗", title: t("home.feat5.title"), desc: t("home.feat5.desc") },
+    { icon: "💾", title: t("home.feat6.title"), desc: t("home.feat6.desc") },
+  ];
+
   return (
     <div className="page">
       {/* Hero */}
@@ -17,7 +31,7 @@ export default function HomePage() {
           marginBottom: "24px",
           letterSpacing: "0.3px",
         }}>
-          ⚡ Powered by WhisperX AI
+          {t("home.badge")}
         </div>
 
         <h1 style={{
@@ -30,13 +44,13 @@ export default function HomePage() {
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
         }}>
-          แปลงเสียงเป็นซับไทเทิล<br />
+          {t("home.title1")}<br />
           <span style={{
             background: "linear-gradient(135deg, #a78bfa, #60a5fa)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
           }}>
-            ด้วย AI ในไม่กี่วินาที
+            {t("home.title2")}
           </span>
         </h1>
 
@@ -47,16 +61,15 @@ export default function HomePage() {
           margin: "0 auto 40px",
           lineHeight: 1.7,
         }}>
-          อัพโหลดไฟล์เสียงหรือวิดีโอ — รับ transcript JSON, SRT, TXT
-          และ ซับ .ASS สไตล์ TikTok พร้อมใช้ทันที
+          {t("home.desc")}
         </p>
 
         <div style={{ display: "flex", gap: "14px", justifyContent: "center", flexWrap: "wrap" }}>
           <Link href="/transcribe" className="btn btn-primary btn-lg">
-            🚀 เริ่ม Transcribe ฟรี
+            {t("home.cta")}
           </Link>
           <Link href="/pricing" className="btn btn-secondary btn-lg">
-            💎 ดูราคา
+            {t("home.pricing")}
           </Link>
         </div>
       </div>
@@ -68,38 +81,7 @@ export default function HomePage() {
           gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
           gap: "20px",
         }}>
-          {[
-            {
-              icon: "🎤",
-              title: "Transcribe ถูกต้องสูง",
-              desc: "ใช้ WhisperX ร่วมกับ word-level timestamps สำหรับการ align ที่แม่นยำ",
-            },
-            {
-              icon: "🎬",
-              title: "ซับ ASS สไตล์ TikTok",
-              desc: "สร้างซับไทเทิลแบบ word-by-word หรือ pause-split ทั้งแนวตั้งและแนวนอน",
-            },
-            {
-              icon: "🌐",
-              title: "รองรับ 15+ ภาษา",
-              desc: "ไทย, อังกฤษ, จีน, ญี่ปุ่น, เกาหลี และอีกมาก พร้อม Auto-detect",
-            },
-            {
-              icon: "⚡",
-              title: "เร็ว คิดตามจริง",
-              desc: "ไม่มีค่าสมัครรายเดือน — ซื้อ credits ใช้ตามจำนวนนาทีจริง",
-            },
-            {
-              icon: "🔗",
-              title: "Align Mode",
-              desc: "มีบทพูดอยู่แล้ว? ให้ AI จับ timestamp ให้ตรงกับเสียงโดยไม่ผิดคำ",
-            },
-            {
-              icon: "💾",
-              title: "Export หลายรูปแบบ",
-              desc: "ดาวน์โหลดเป็น JSON, SRT, TXT หรือ ASS — ทุกงานเก็บใน Dashboard",
-            },
-          ].map((f) => (
+          {features.map((f) => (
             <div key={f.title} className="card" style={{ padding: "28px" }}>
               <div style={{ fontSize: "2rem", marginBottom: "12px" }}>{f.icon}</div>
               <h3 style={{ marginBottom: "8px" }}>{f.title}</h3>
@@ -119,13 +101,13 @@ export default function HomePage() {
           textAlign: "center",
         }}>
           <h2 style={{ fontSize: "1.8rem", marginBottom: "12px" }}>
-            สมัครใหม่รับ <span style={{ color: "var(--accent-light)" }}>5,000 credits ฟรี!</span>
+            {t("home.bonus.title", { credits: "5,000" })}
           </h2>
           <p style={{ color: "var(--text-secondary)", marginBottom: "28px" }}>
-            ≈ 25 นาที — ไม่ต้องใส่บัตรเครดิต
+            {t("home.bonus.desc")}
           </p>
           <Link href="/login" className="btn btn-primary btn-lg">
-            เริ่มใช้งานฟรี →
+            {t("home.bonus.cta")}
           </Link>
         </div>
       </div>

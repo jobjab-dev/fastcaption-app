@@ -1,4 +1,5 @@
-// Prisma schema for WhisperPro commercial transcription app
+// Prisma schema for FastCaption — Supabase PostgreSQL
+// Auth handled by Supabase Auth (no NextAuth models needed)
 
 generator client {
   provider = "prisma-client"
@@ -6,57 +7,28 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
-}
-
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  credits       Int       @default(5000)
-  createdAt     DateTime  @default(now())
-  accounts      Account[]
-  sessions      Session[]
-  jobs          Job[]
-  transactions  Transaction[]
+  id              String    @id @default(cuid())
+  supabaseUserId  String    @unique  // Supabase Auth user ID mapping
+  name            String?
+  email           String    @unique
+  image           String?
+  credits         Int       @default(5000)
+  createdAt       DateTime  @default(now())
+  jobs            Job[]
+  transactions    Transaction[]
+
+  // Affiliate fields
+  referralCode    String?   @unique
+  referredBy      String?
+  affiliateStatus String    @default("inactive") // inactive | active | suspended
+  commissions     Commission[] @relation("AffiliateCommissions")
+  payoutRequests  PayoutRequest[]
 }
 
 model Job {
@@ -69,9 +41,11 @@ model Job {
   creditsUsed   Int       @default(0)
   status        String    @default("pending")
   language      String    @default("th")
-  resultJson    String?
+  resultJson    String?   // JSON string (stored in DB, not file path)
   resultAss     String?
   errorMessage  String?
+  replicateId   String?   // Replicate prediction ID for webhook matching
+  storagePath   String?   // Supabase Storage path for uploaded audio
   createdAt     DateTime  @default(now())
   completedAt   DateTime?
 }
@@ -80,10 +54,11 @@ model Transaction {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        String   // signup_bonus, purchase, usage
+  type        String   // signup_bonus, purchase, usage, affiliate_commission
   credits     Int      // positive = add, negative = deduct
   description String
-  stripeId    String?
+  stripeId    String?  // Payment reference (Stripe/Omise/NOWPayments ID)
+  gateway     String?  // stripe, omise, nowpayments
   createdAt   DateTime @default(now())
 }
 
@@ -94,4 +69,45 @@ model CreditPackage {
   priceThb  Int    // price in satang (1 baht = 100)
   stripePriceId String?
   active    Boolean @default(true)
+}
+
+// ═══ AFFILIATE SYSTEM ═══
+
+model AffiliateClick {
+  id              String   @id @default(cuid())
+  code            String
+  ip              String?
+  userAgent       String?
+  convertedUserId String?
+  createdAt       DateTime @default(now())
+
+  @@index([code])
+}
+
+model Commission {
+  id              String   @id @default(cuid())
+  affiliateId     String
+  affiliate       User     @relation("AffiliateCommissions", fields: [affiliateId], references: [id], onDelete: Cascade)
+  referredUserId  String
+  transactionId   String
+  amountThb       Float
+  status          String   @default("pending") // pending | approved | paid
+  createdAt       DateTime @default(now())
+
+  @@index([affiliateId])
+  @@index([referredUserId])
+}
+
+model PayoutRequest {
+  id          String    @id @default(cuid())
+  affiliateId String
+  affiliate   User      @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  amountThb   Float
+  method      String    @default("bank_transfer") // bank_transfer | promptpay
+  accountInfo String
+  status      String    @default("pending") // pending | approved | paid | rejected
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([affiliateId])
 }

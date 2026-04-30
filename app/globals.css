@@ -175,6 +175,7 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
 
 /* ── Upload Zone ── */
 .upload-zone {
+  position: relative;
   border: 2px dashed var(--border);
   border-radius: var(--radius-lg);
   padding: 48px 24px;
@@ -235,6 +236,20 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
 }
 @media (max-width: 600px) {
   .stats-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Dashboard Panels ── */
+.dashboard-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 800px) {
+  .dashboard-panels { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .table-wrapper { overflow-x: auto; }
+  .table-wrapper table { min-width: 400px; }
 }
 
 .stat-card {
@@ -317,14 +332,32 @@ td { color: var(--text-primary); }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: rgba(255,255,255,0.02); }
 
-/* ── Pricing Grid ── */
+/* ── Pricing Grid / Mobile Carousel ── */
 .pricing-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
 }
 @media (max-width: 800px) {
-  .pricing-grid { grid-template-columns: 1fr; }
+  .pricing-grid {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 16px;
+    padding: 16px 20px 16px;
+    margin: 0 -20px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .pricing-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .pricing-grid > .pricing-card {
+    scroll-snap-align: center;
+    flex: 0 0 85%;
+    min-width: 0;
+  }
 }
 
 .pricing-card {
@@ -384,7 +417,63 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
   flex: 1;
 }
 
-/* ── Responsive Dashboard ── */
+/* ── Carousel Dots ── */
+.carousel-dots {
+  display: none;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+@media (max-width: 800px) {
+  .carousel-dots { display: flex; }
+}
+.carousel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: var(--border);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+.carousel-dot.active {
+  background: var(--accent-light);
+  width: 24px;
+  border-radius: 4px;
+}
+
+/* ── Navbar Responsive ── */
+.nav-links-desktop {
+  display: flex;
+  gap: 0.25rem;
+}
+.hamburger-btn {
+  display: none !important;
+}
+@media (max-width: 768px) {
+  .nav-links-desktop { display: none !important; }
+  .auth-desktop { display: none !important; }
+  .hamburger-btn { display: flex !important; }
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Pricing Title ── */
+.pricing-title {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+}
+@media (max-width: 600px) {
+  .pricing-title {
+    font-size: 1.8rem;
+    margin-bottom: 8px;
+  }
+}
+
+/* ── Responsive Dashboard & General ── */
 @media (max-width: 700px) {
   .page { padding: 24px 12px; }
   h1 { font-size: 1.5rem; }

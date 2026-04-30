@@ -1,22 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/app/lib/auth";
+import { getAuthUser } from "@/app/lib/auth-helpers";
 import { prisma } from "@/app/lib/db";
-import fs from "fs/promises";
-import path from "path";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAuthUser();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await params;
 
   const job = await prisma.job.findFirst({
-    where: { id, userId: session.user.id },
+    where: { id, userId: user.id },
   });
 
   if (!job) {
@@ -37,37 +35,32 @@ export async function GET(
   });
 }
 
-// Download result
+// Download result — returns JSON content directly from DB
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getAuthUser();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await params;
 
   const job = await prisma.job.findFirst({
-    where: { id, userId: session.user.id, status: "done" },
+    where: { id, userId: user.id, status: "done" },
   });
 
   if (!job || !job.resultJson) {
     return NextResponse.json({ error: "Result not available" }, { status: 404 });
   }
 
-  try {
-    const content = await fs.readFile(job.resultJson, "utf-8");
-    const fileName = path.basename(job.fileName, path.extname(job.fileName)) + ".json";
+  const fileName = job.fileName.replace(/\.[^.]+$/, "") + ".json";
 
-    return new NextResponse(content, {
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
-      },
-    });
-  } catch {
-    return NextResponse.json({ error: "File not found" }, { status: 404 });
-  }
+  return new NextResponse(job.resultJson, {
+    headers: {
+      "Content-Type": "application/json",
+      "Content-Disposition": `attachment; filename="${fileName}"`,
+    },
+  });
 }

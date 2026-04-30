@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStripe } from "@/app/lib/stripe";
 import { addCredits } from "@/app/lib/credits";
+import { createCommission } from "@/app/lib/affiliate";
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -23,18 +24,37 @@ export async function POST(request: NextRequest) {
     const userId = session.metadata?.userId;
     const credits = parseInt(session.metadata?.credits || "0");
     const packageId = session.metadata?.packageId || "unknown";
+    const priceThb = parseFloat(session.metadata?.priceThb || "0");
 
     if (userId && credits > 0) {
+      const txDescription = `Purchased ${packageId}: ${credits.toLocaleString()} credits`;
       await addCredits(
         userId,
         credits,
         "purchase",
-        `Purchased ${packageId}: ${credits.toLocaleString()} credits`,
+        txDescription,
         session.payment_intent as string
       );
       console.log(`[stripe] Added ${credits} credits to user ${userId}`);
+
+      // Create affiliate commission if user was referred
+      if (priceThb > 0) {
+        try {
+          const commission = await createCommission(
+            userId,
+            session.payment_intent as string,
+            priceThb
+          );
+          if (commission) {
+            console.log(`[affiliate] Commission ฿${commission.amountThb} created for affiliate ${commission.affiliateId}`);
+          }
+        } catch (e) {
+          console.error("[affiliate] Failed to create commission:", e);
+        }
+      }
     }
   }
 
   return NextResponse.json({ received: true });
 }
+

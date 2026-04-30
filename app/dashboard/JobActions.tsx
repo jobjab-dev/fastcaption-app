@@ -52,45 +52,31 @@ export default function JobActions({ jobId, fileName, status }: JobActionsProps)
   const handleDownload = async (type: DownloadType) => {
     setDownloading(type);
     try {
-      if (type === "json") {
-        const res = await fetch(`/api/jobs/${jobId}`, { method: "POST" });
-        if (!res.ok) throw new Error("Download failed");
-        downloadBlob(await res.blob(), `${baseName}.json`);
+      let url: string;
 
-      } else if (type === "srt" || type === "txt") {
-        // Download JSON first, then convert client-side
-        const res = await fetch(`/api/jobs/${jobId}`, { method: "POST" });
-        if (!res.ok) throw new Error("Download failed");
-        const data = await res.json();
-        
-        if (type === "srt") {
-          const srt = jsonToSrt(data.segments || []);
-          downloadBlob(new Blob([srt], { type: "text/plain" }), `${baseName}.srt`);
-        } else {
-          const txt = (data.segments || []).map((s: { text: string }) => s.text).join("\n");
-          downloadBlob(new Blob([txt], { type: "text/plain" }), `${baseName}.txt`);
-        }
-
-      } else if (type.startsWith("ass-")) {
+      if (type.startsWith("ass-")) {
         // Parse: ass-{mode}-{orientation}
         const parts = type.split("-");
-        const assMode = parts[1] as "pause" | "word";
-        const orientation = parts[2] as "portrait" | "landscape";
-
-        const formData = new FormData();
-        formData.append("jobId", jobId);
-        formData.append("assMode", assMode);
-        formData.append("orientation", orientation);
-
-        const res = await fetch("/api/transcribe/ass", { method: "POST", body: formData });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Failed");
-        }
-        const suffix = orientation === "landscape" ? "_landscape" : "";
-        downloadBlob(await res.blob(), `${baseName}${suffix}.ass`);
+        const assMode = parts[1];
+        const orientation = parts[2];
+        url = `/api/jobs/${jobId}/download?type=ass&mode=${assMode}&orientation=${orientation}`;
+      } else {
+        url = `/api/jobs/${jobId}/download?type=${type}`;
       }
 
+      const res = await fetch(url);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Download failed" }));
+        throw new Error(err.error || "Download failed");
+      }
+
+      const blob = await res.blob();
+      // Extract filename from Content-Disposition header
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const filenameMatch = disposition.match(/filename="?(.+?)"?$/);
+      const downloadName = filenameMatch ? filenameMatch[1] : `${baseName}.${type.split("-")[0]}`;
+      
+      downloadBlob(blob, downloadName);
       setOpen(false);
     } catch (err) {
       alert(`ดาวน์โหลดล้มเหลว: ${err}`);

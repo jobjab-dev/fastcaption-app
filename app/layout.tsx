@@ -5,7 +5,7 @@ import { Providers } from "./components/Providers";
 
 export const metadata: Metadata = {
   title: "FastCaption — AI Subtitle Generator",
-  description: "แปลงเสียงเป็นข้อความด้วย AI คุณภาพสูงสุด พร้อมสร้างซับไทเทิล .ASS อัตโนมัติ",
+  description: "Convert audio to high-quality transcripts and auto-generate TikTok-style .ASS subtitles with AI",
 };
 
 export default function RootLayout({
@@ -14,7 +14,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th">
+    <html lang="en" suppressHydrationWarning>
       <body>
         <Providers>
           <Navbar />

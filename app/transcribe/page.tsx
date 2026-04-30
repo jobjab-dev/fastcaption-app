@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { needsConversion, convertToMp3, formatFileSize, type ConvertProgress } from "@/app/lib/ffmpeg-convert";
+import { useLocale } from "@/app/components/LocaleProvider";
 
 const LANGUAGES = [
   { code: "th", name: "ไทย" },
@@ -21,10 +23,7 @@ const LANGUAGES = [
   { code: "auto", name: "Auto Detect" },
 ];
 
-const ASS_MODES = [
-  { value: "pause", label: "แบ่งตามจังหวะหยุดพูด", desc: "เหมาะกับซับไทเทิลทั่วไป" },
-  { value: "word", label: "ทีละคำ (Word-by-Word)", desc: "เหมาะกับ TikTok / Reels แบบเน้นคำ" },
-];
+// ASS_MODES labels are set dynamically via i18n in the component
 
 type JobStatus = "idle" | "uploading" | "processing" | "done" | "failed";
 type WorkMode = "transcribe" | "align";
@@ -37,6 +36,12 @@ interface JobResult {
 }
 
 export default function TranscribePage() {
+  const { t } = useLocale();
+
+  const ASS_MODES = [
+    { value: "pause", label: t("tx.assPause"), desc: t("tx.assPauseDesc") },
+    { value: "word", label: t("tx.assWord"), desc: t("tx.assWordDesc") },
+  ];
   // Main state
   const [workMode, setWorkMode] = useState<WorkMode>("transcribe");
   const [file, setFile] = useState<File | null>(null);
@@ -53,15 +58,48 @@ export default function TranscribePage() {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [assGenerating, setAssGenerating] = useState(false);
 
+  // Conversion state
+  const [convertProgress, setConvertProgress] = useState<ConvertProgress | null>(null);
+
   // Upload JSON for ASS conversion
   const [jsonFile, setJsonFile] = useState<File | null>(null);
   const jsonFileRef = useRef<HTMLInputElement>(null);
+
+  // Allowed audio/video extensions
+  const ALLOWED_EXTS = new Set([
+    ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".wma", ".aac",
+    ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".ts",
+  ]);
+
+  const validateFile = (f: File): boolean => {
+    const ext = "." + f.name.split(".").pop()?.toLowerCase();
+    if (!ALLOWED_EXTS.has(ext)) {
+      setMessage(t("tx.unsupported", { ext }));
+      setStatus("failed");
+      return false;
+    }
+    return true;
+  };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const f = e.dataTransfer.files[0];
-    if (f) setFile(f);
+    if (f) {
+      const ext = "." + f.name.split(".").pop()?.toLowerCase();
+      const allowed = new Set([
+        ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".wma", ".aac",
+        ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".ts",
+      ]);
+      if (!allowed.has(ext)) {
+        setMessage(t("tx.unsupported", { ext }));
+        setStatus("failed");
+        return;
+      }
+      setFile(f);
+      setMessage("");
+      setStatus("idle");
+    }
   }, []);
 
   const handleSubmit = async () => {
@@ -73,11 +111,30 @@ export default function TranscribePage() {
     }
 
     setStatus("uploading");
-    setMessage("กำลังอัพโหลดไฟล์...");
     setResult(null);
+    setConvertProgress(null);
+
+    // Convert video → mp3 if needed (client-side)
+    let uploadFile = file;
+    if (needsConversion(file)) {
+      setMessage(`🎬 กำลังแปลงวิดีโอเป็น MP3... (${formatFileSize(file.size)})`);
+      try {
+        uploadFile = await convertToMp3(file, (p) => {
+          setConvertProgress(p);
+          setMessage(`🎬 ${p.message}`);
+        });
+      } catch {
+        setStatus("failed");
+        setMessage(t("tx.convertFailed"));
+        return;
+      }
+    }
+
+    setMessage(t("tx.uploading"));
+    setConvertProgress(null);
 
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", uploadFile);
     formData.append("language", language);
     formData.append("mode", workMode);
     if (workMode === "align") {
@@ -91,16 +148,16 @@ export default function TranscribePage() {
       if (!res.ok) {
         setStatus("failed");
         if (res.status === 402) {
-          setMessage(`❌ Credits ไม่พอ — ต้องใช้ ${data.creditsNeeded?.toLocaleString()} credits (คงเหลือ ${data.balance?.toLocaleString()})`);
+          setMessage(t("tx.creditsLow", { needed: data.creditsNeeded?.toLocaleString() || "?", balance: data.balance?.toLocaleString() || "?" }));
         } else {
-          setMessage(`❌ ${data.error}`);
+          setMessage(t("tx.errorGeneral", { error: data.error }));
         }
         return;
       }
 
       setStatus("processing");
       const modeLabel = workMode === "align" ? "align" : "transcribe";
-      setMessage(`⏳ กำลัง ${modeLabel}... (${data.durationSec} วินาที, ใช้ ${data.creditsUsed} credits)`);
+      setMessage(t("tx.processingStatus", { mode: modeLabel, dur: data.durationSec, cred: data.creditsUsed }));
 
       // Poll for job completion
       const jobId = data.jobId;
@@ -112,12 +169,12 @@ export default function TranscribePage() {
           if (jobData.status === "done") {
             clearInterval(pollInterval);
             setStatus("done");
-            setMessage(`✅ สำเร็จ! ใช้ ${data.creditsUsed} credits (คงเหลือ ${data.balanceAfter})`);
+            setMessage(t("tx.success", { cred: data.creditsUsed, bal: data.balanceAfter }));
             setResult({ jobId, ...data });
           } else if (jobData.status === "failed") {
             clearInterval(pollInterval);
             setStatus("failed");
-            setMessage(`❌ ล้มเหลว: ${jobData.errorMessage || "Unknown error"}\n\n💰 Credits ได้คืนแล้ว`);
+            setMessage(t("tx.jobFailed", { err: jobData.errorMessage || "Unknown error" }));
           }
         } catch {
           // Ignore polling errors, will retry
@@ -125,40 +182,92 @@ export default function TranscribePage() {
       }, 3000);
     } catch (err) {
       setStatus("failed");
-      setMessage(`❌ เกิดข้อผิดพลาด: ${err}`);
+      setMessage(t("tx.errorGeneral", { error: err }));
     }
   };
 
+  // ─── Download helpers ────────────────────────────────────────
+
+  /** Fetch the raw JSON from the completed job */
+  const fetchJobJson = async (): Promise<{ segments: Array<{ start: number; end: number; text: string }>; [k: string]: unknown } | null> => {
+    if (!result) return null;
+    const res = await fetch(`/api/jobs/${result.jobId}`, { method: "POST" });
+    if (!res.ok) throw new Error("Download failed");
+    return res.json();
+  };
+
+  const triggerDownload = (content: string, filename: string, mime = "text/plain") => {
+    const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const baseName = () =>
+    file?.name.replace(/\.[^.]+$/, "") || "result";
+
+  // JSON
   const handleDownloadJson = async () => {
-    if (!result) return;
     try {
-      const res = await fetch(`/api/jobs/${result.jobId}`, { method: "POST" });
-      if (!res.ok) throw new Error("Download failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file?.name.replace(/\.[^.]+$/, ".json") || "result.json";
-      a.click();
-      URL.revokeObjectURL(url);
+      const data = await fetchJobJson();
+      if (!data) return;
+      triggerDownload(JSON.stringify(data, null, 2), `${baseName()}.json`, "application/json");
     } catch (err) {
-      setMessage(`❌ ดาวน์โหลดล้มเหลว: ${err}`);
+      setMessage(t("tx.errorDownload", { err }));
     }
   };
 
+  // SRT
+  const handleDownloadSrt = async () => {
+    try {
+      const data = await fetchJobJson();
+      if (!data?.segments) { setMessage(t("tx.noSegments")); return; }
+      const srt = data.segments.map((seg, i) => {
+        const fmt = (s: number) => {
+          const h = Math.floor(s / 3600);
+          const m = Math.floor((s % 3600) / 60);
+          const sec = Math.floor(s % 60);
+          const ms = Math.round((s % 1) * 1000);
+          return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+        };
+        return `${i + 1}\n${fmt(seg.start)} --> ${fmt(seg.end)}\n${seg.text}\n`;
+      }).join("\n");
+      triggerDownload(srt, `${baseName()}.srt`);
+    } catch (err) {
+      setMessage(t("tx.errorDownload", { err }));
+    }
+  };
+
+  // TXT (plain text)
+  const handleDownloadTxt = async () => {
+    try {
+      const data = await fetchJobJson();
+      if (!data?.segments) { setMessage(t("tx.noSegments")); return; }
+      const txt = data.segments.map(seg => seg.text).join("\n");
+      triggerDownload(txt, `${baseName()}.txt`);
+    } catch (err) {
+      setMessage(t("tx.errorDownload", { err }));
+    }
+  };
+
+  // ASS subtitle (server-side generation)
   const handleDownloadAss = async (source: "job" | "upload") => {
     setAssGenerating(true);
     try {
       const formData = new FormData();
       formData.append("assMode", assMode);
       formData.append("orientation", orientation);
+      formData.append("language", language);
 
       if (source === "job" && result) {
         formData.append("jobId", result.jobId);
       } else if (source === "upload" && jsonFile) {
         formData.append("jsonFile", jsonFile);
       } else {
-        setMessage("❌ ไม่มีข้อมูล JSON");
+        setMessage(t("tx.unsupported", { ext: "none" }));
         return;
       }
 
@@ -174,10 +283,10 @@ export default function TranscribePage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const baseName = source === "upload" && jsonFile
+      const name = source === "upload" && jsonFile
         ? jsonFile.name.replace(/\.json$/i, "")
-        : file?.name.replace(/\.[^.]+$/, "") || "subtitle";
-      a.download = `${baseName}.ass`;
+        : baseName();
+      a.download = `${name}.ass`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -195,9 +304,9 @@ export default function TranscribePage() {
   return (
     <div className="page">
       <div className="container" style={{ maxWidth: "780px" }}>
-        <h1 style={{ marginBottom: "8px" }}>🎵 Transcribe</h1>
+        <h1 style={{ marginBottom: "8px" }}>{t("tx.title")}</h1>
         <p style={{ color: "var(--text-secondary)", marginBottom: "24px" }}>
-          อัพโหลดไฟล์เสียงหรือวิดีโอเพื่อแปลงเป็นข้อความ พร้อมสร้าง ASS Subtitle
+          {t("tx.desc")}
         </p>
 
         {/* Mode Toggle */}
@@ -207,14 +316,14 @@ export default function TranscribePage() {
             onClick={() => setWorkMode("transcribe")}
             style={{ flex: 1 }}
           >
-            🎤 Transcribe
+            {t("tx.modeTranscribe")}
           </button>
           <button
             className={`btn ${workMode === "align" ? "btn-primary" : "btn-secondary"}`}
             onClick={() => setWorkMode("align")}
             style={{ flex: 1 }}
           >
-            🔗 Align บทพูด
+            {t("tx.modeAlign")}
           </button>
         </div>
 
@@ -235,21 +344,55 @@ export default function TranscribePage() {
           <input
             ref={fileRef}
             type="file"
-            accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.mp4,.mkv,.avi"
+            accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.wma,.aac,.mp4,.mkv,.avi,.mov,.webm,.flv,.wmv,.m4v,.ts"
             style={{ display: "none" }}
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f && validateFile(f)) {
+                setFile(f);
+                setMessage("");
+                setStatus("idle");
+              }
+              // Reset input so same file can be re-selected
+              e.target.value = "";
+            }}
           />
           {file ? (
             <>
               <span className="icon">📁</span>
               <div className="title">{file.name}</div>
-              <div className="subtitle">{formatSize(file.size)} — คลิกเพื่อเปลี่ยนไฟล์</div>
+              <div className="subtitle">{formatSize(file.size)} — {t("tx.changeFile")}</div>
+              <button
+                onClick={(e) => { e.stopPropagation(); setFile(null); setMessage(""); setStatus("idle"); }}
+                style={{
+                  position: "absolute",
+                  top: "12px",
+                  right: "12px",
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: "50%",
+                  width: "32px",
+                  height: "32px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  color: "var(--text-secondary)",
+                  fontSize: "1rem",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.3)"; e.currentTarget.style.color = "#f87171"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+                title="ยกเลิกไฟล์"
+              >
+                ✕
+              </button>
             </>
           ) : (
             <>
               <span className="icon">📤</span>
-              <div className="title">ลากไฟล์มาวาง หรือคลิกเพื่อเลือก</div>
-              <div className="subtitle">รองรับ MP3, WAV, M4A, FLAC, MP4, MKV (สูงสุด 500MB)</div>
+              <div className="title">{t("tx.dropzone")}</div>
+              <div className="subtitle">{t("tx.dropzoneHint")}</div>
             </>
           )}
         </div>
@@ -257,12 +400,12 @@ export default function TranscribePage() {
         {/* Script Text (Align mode) */}
         {workMode === "align" && (
           <div style={{ marginTop: "16px" }}>
-            <label className="form-label">📝 วางบทพูด (Script)</label>
+            <label className="form-label">{t("tx.scriptLabel")}</label>
             <textarea
               className="textarea"
               value={scriptText}
               onChange={(e) => setScriptText(e.target.value)}
-              placeholder="วางบทพูดที่นี่... แบ่งบรรทัดตามประโยค/วรรค"
+              placeholder={t("tx.scriptPlaceholder")}
               rows={8}
               style={{
                 width: "100%",
@@ -282,7 +425,7 @@ export default function TranscribePage() {
 
         {/* Language Select */}
         <div style={{ marginTop: "16px" }}>
-          <label className="form-label">🌐 ภาษา</label>
+          <label className="form-label">{t("tx.language")}</label>
           <select
             className="select"
             value={language}
@@ -301,12 +444,43 @@ export default function TranscribePage() {
           onClick={handleSubmit}
           disabled={!file || status === "uploading" || status === "processing"}
         >
-          {status === "uploading" && <><span className="spinner" /> กำลังอัพโหลด...</>}
-          {status === "processing" && <><span className="spinner" /> กำลัง {workMode === "align" ? "align" : "transcribe"}...</>}
+          {status === "uploading" && <><span className="spinner" /> {t("tx.uploading")}</>}
+          {status === "processing" && <><span className="spinner" /> {t("tx.processing", { sec: "", credits: "" })}</>}
           {(status === "idle" || status === "done" || status === "failed") && (
-            workMode === "align" ? "🔗 เริ่ม Align" : "🚀 เริ่ม Transcribe"
+            workMode === "align" ? t("tx.submitAlign") : t("tx.submit")
           )}
         </button>
+
+        {/* Conversion Progress Bar */}
+        {convertProgress && convertProgress.stage !== "done" && (
+          <div style={{
+            marginTop: "16px",
+            padding: "16px 20px",
+            borderRadius: "10px",
+            background: "rgba(99, 102, 241, 0.1)",
+            border: "1px solid rgba(99, 102, 241, 0.25)",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "0.88rem" }}>
+              <span style={{ color: "var(--text-secondary)" }}>🎬 แปลงวิดีโอ → MP3</span>
+              <span style={{ color: "var(--accent-light)", fontWeight: 600 }}>{convertProgress.progress}%</span>
+            </div>
+            <div style={{
+              width: "100%",
+              height: "6px",
+              borderRadius: "3px",
+              background: "rgba(255,255,255,0.1)",
+              overflow: "hidden",
+            }}>
+              <div style={{
+                width: `${convertProgress.progress}%`,
+                height: "100%",
+                borderRadius: "3px",
+                background: "linear-gradient(90deg, var(--accent), var(--accent-light))",
+                transition: "width 0.3s ease",
+              }} />
+            </div>
+          </div>
+        )}
 
         {/* Status Message */}
         {message && (
@@ -318,15 +492,43 @@ export default function TranscribePage() {
           </div>
         )}
 
-        {/* Download JSON */}
+        {/* ─── Download Results (JSON, SRT, TXT) ─── */}
         {status === "done" && result && (
-          <button
-            className="btn btn-secondary btn-lg"
-            style={{ width: "100%", marginTop: "12px" }}
-            onClick={handleDownloadJson}
-          >
-            💾 ดาวน์โหลด JSON
-          </button>
+          <div style={{
+            marginTop: "16px",
+            padding: "20px",
+            borderRadius: "12px",
+            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.08))",
+            border: "1px solid rgba(99, 102, 241, 0.2)",
+          }}>
+            <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "12px", color: "var(--text-primary)" }}>
+              📥 ดาวน์โหลดผลลัพธ์
+            </div>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: "8px",
+            }}>
+              <button className="btn btn-secondary" onClick={handleDownloadJson}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 8px", gap: "4px" }}>
+                <span style={{ fontSize: "1.3rem" }}>📋</span>
+                <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>JSON</span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>ข้อมูลดิบ + timestamps</span>
+              </button>
+              <button className="btn btn-secondary" onClick={handleDownloadSrt}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 8px", gap: "4px" }}>
+                <span style={{ fontSize: "1.3rem" }}>🎬</span>
+                <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>SRT</span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>ซับไทเทิลมาตรฐาน</span>
+              </button>
+              <button className="btn btn-secondary" onClick={handleDownloadTxt}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 8px", gap: "4px" }}>
+                <span style={{ fontSize: "1.3rem" }}>📝</span>
+                <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>TXT</span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>ข้อความล้วน</span>
+              </button>
+            </div>
+          </div>
         )}
 
         {/* ─── ASS Subtitle Section ─── */}
@@ -335,7 +537,7 @@ export default function TranscribePage() {
           paddingTop: "24px",
           borderTop: "1px solid var(--border)",
         }}>
-          <h2 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>🎬 สร้าง ASS Subtitle</h2>
+          <h2 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>✨ สร้าง ASS Subtitle</h2>
 
           {/* ASS Mode */}
           <div style={{ marginBottom: "16px" }}>
@@ -397,59 +599,99 @@ export default function TranscribePage() {
             </div>
           </div>
 
-          {/* Generate ASS from Job */}
-          {status === "done" && result && (
-            <button
-              className="btn btn-primary btn-lg"
-              style={{ width: "100%", marginBottom: "12px" }}
-              onClick={() => handleDownloadAss("job")}
-              disabled={assGenerating}
-            >
-              {assGenerating ? <><span className="spinner" /> กำลังสร้าง ASS...</> : "🎬 สร้าง ASS จากผลลัพธ์"}
-            </button>
-          )}
-
-          {/* Upload JSON for ASS */}
-          <div style={{
-            padding: "16px",
-            borderRadius: "10px",
-            border: "1px dashed var(--border)",
-            background: "var(--surface)",
-          }}>
-            <div style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "10px" }}>
-              📁 หรืออัพโหลด JSON จาก disk เพื่อแปลงเป็น ASS (ฟรี ไม่ใช้ credits)
-            </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => jsonFileRef.current?.click()}
-                style={{ flex: "0 0 auto" }}
-              >
-                เลือกไฟล์ JSON
-              </button>
-              <input
-                ref={jsonFileRef}
-                type="file"
-                accept=".json"
-                style={{ display: "none" }}
-                onChange={(e) => setJsonFile(e.target.files?.[0] || null)}
-              />
-              {jsonFile && (
-                <>
+          {/* JSON Source: auto from job OR upload */}
+          {!(status === "done" && result) && (
+            <div style={{
+              position: "relative",
+              padding: "16px",
+              borderRadius: "10px",
+              border: `1px dashed ${jsonFile ? "var(--accent)" : "var(--border)"}`,
+              background: jsonFile ? "rgba(99, 102, 241, 0.05)" : "var(--surface)",
+              marginBottom: "12px",
+              transition: "all 0.2s",
+            }}>
+              <div style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "10px" }}>
+                📁 อัพโหลด JSON เพื่อแปลงเป็น ASS (ฟรี ไม่ใช้ credits)
+              </div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => jsonFileRef.current?.click()}
+                  style={{ flex: "0 0 auto" }}
+                >
+                  {jsonFile ? "เปลี่ยนไฟล์" : "เลือกไฟล์ JSON"}
+                </button>
+                <input
+                  ref={jsonFileRef}
+                  type="file"
+                  accept=".json"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      const ext = f.name.split(".").pop()?.toLowerCase();
+                      if (ext !== "json") {
+                        setMessage("❌ เลือกได้เฉพาะไฟล์ .json เท่านั้น");
+                        setStatus("failed");
+                      } else {
+                        setJsonFile(f);
+                        setMessage("");
+                      }
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                {jsonFile && (
                   <span style={{ fontSize: "0.85rem", color: "var(--text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {jsonFile.name}
                   </span>
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => handleDownloadAss("upload")}
-                    disabled={assGenerating}
-                  >
-                    {assGenerating ? "กำลังสร้าง..." : "🎬 สร้าง ASS"}
-                  </button>
-                </>
+                )}
+              </div>
+              {/* Cancel button */}
+              {jsonFile && (
+                <button
+                  onClick={() => setJsonFile(null)}
+                  style={{
+                    position: "absolute",
+                    top: "8px",
+                    right: "8px",
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "50%",
+                    width: "28px",
+                    height: "28px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    color: "var(--text-secondary)",
+                    fontSize: "0.85rem",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.3)"; e.currentTarget.style.color = "#f87171"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+                  title="ยกเลิกไฟล์"
+                >
+                  ✕
+                </button>
               )}
             </div>
-          </div>
+          )}
+
+          {/* ASS Generate Button — auto source detection */}
+          {((status === "done" && result) || jsonFile) && (
+            <button
+              className="btn btn-primary btn-lg"
+              style={{ width: "100%", marginTop: "8px" }}
+              onClick={() => handleDownloadAss(status === "done" && result ? "job" : "upload")}
+              disabled={assGenerating}
+            >
+              {assGenerating
+                ? <><span className="spinner" /> กำลังสร้าง ASS...</>
+                : `✨ สร้าง ASS Subtitle${status === "done" && result ? "" : ` — ${jsonFile?.name || ""}`}`
+              }
+            </button>
+          )}
         </div>
       </div>
     </div>
