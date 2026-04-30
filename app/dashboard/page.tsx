@@ -4,6 +4,7 @@ import { prisma } from "@/app/lib/db";
 import { getUserCredits, creditsToMinutes } from "@/app/lib/credits";
 import Link from "next/link";
 import JobActions from "./JobActions";
+import TruncatedText from "@/app/components/TruncatedText";
 import { headers, cookies } from "next/headers";
 import { createT, type Locale } from "@/app/lib/i18n";
 
@@ -110,9 +111,9 @@ export default async function DashboardPage() {
             ) : (
               recentJobs.map((job) => (
                 <div key={job.id} className="job-card">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
                     <div className="job-info">
-                      <div className="job-name">{job.fileName}</div>
+                      <TruncatedText text={job.fileName} className="job-name" />
                       <div className="job-meta">
                         {Math.round(job.durationSec)}s · {job.creditsUsed} credits · {new Date(job.createdAt).toLocaleDateString(dateLocale)}
                       </div>
@@ -139,29 +140,29 @@ export default async function DashboardPage() {
                 </p>
               </div>
             ) : (
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t("dash.colDesc")}</th>
-                      <th>{t("dash.colCredits")}</th>
-                      <th>{t("dash.colDate")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentTransactions.map((tx) => (
-                      <tr key={tx.id}>
-                        <td>{tx.description}</td>
-                        <td style={{ color: tx.credits > 0 ? "var(--success)" : "var(--error)", fontWeight: 600 }}>
-                          {tx.credits > 0 ? "+" : ""}{tx.credits.toLocaleString()}
-                        </td>
-                        <td style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
-                          {new Date(tx.createdAt).toLocaleDateString(dateLocale)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {recentTransactions.map((tx) => (
+                  <div key={tx.id} className="card" style={{ padding: "14px 16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+                      <TruncatedText
+                        text={tx.description}
+                        style={{ flex: 1, minWidth: 0, fontSize: "0.9rem" }}
+                      />
+                      <span style={{
+                        color: tx.credits > 0 ? "var(--success)" : "var(--error)",
+                        fontWeight: 700,
+                        fontSize: "0.9rem",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}>
+                        {tx.credits > 0 ? "+" : ""}{tx.credits.toLocaleString()}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                      {new Date(tx.createdAt).toLocaleDateString(dateLocale)}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
