@@ -297,7 +297,7 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
   margin-bottom: 10px;
   transition: border-color 0.2s;
   max-width: 100%;
-  overflow: hidden;
+  position: relative;
 }
 .job-card:hover { border-color: var(--border-hover); }
 .job-card:last-child { margin-bottom: 0; }
