@@ -478,3 +478,11 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
   .page { padding: 24px 12px; }
   h1 { font-size: 1.5rem; }
 }
+
+/* ── Feature Grid Responsive ── */
+@media (max-width: 900px) {
+  .features-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 600px) {
+  .features-grid { grid-template-columns: 1fr !important; }
+}

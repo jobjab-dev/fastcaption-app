@@ -124,9 +124,9 @@ export default function HomePage() {
 
       {/* Features Grid */}
       <div className="container" style={{ paddingBottom: "80px" }}>
-        <div style={{
+        <div className="features-grid" style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          gridTemplateColumns: "repeat(3, 1fr)",
           gap: "20px",
         }}>
           {features.map((f) => (
