@@ -23,9 +23,15 @@ export default function TruncatedText({
       onClick={() => setExpanded(!expanded)}
       style={{
         cursor: "pointer",
+        maxWidth: "100%",
         ...style,
         ...(expanded
-          ? { wordBreak: "break-word" as const }
+          ? {
+              whiteSpace: "normal" as const,
+              wordBreak: "break-all" as const,
+              overflow: "visible" as const,
+              textOverflow: "clip" as const,
+            }
           : {
               overflow: "hidden",
               textOverflow: "ellipsis",
