@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     // Omise uses satang (1 THB = 100 satang)
     const amountSatang = pkg.priceThb * 100;
-    const origin = request.headers.get("origin") || "http://localhost:3000";
+    const origin = request.headers.get("origin") || "https://fastcaption.app";
 
     const result = await createOmiseCharge({
       amount: amountSatang,

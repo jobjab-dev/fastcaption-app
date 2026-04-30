@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const usdPrice = convertPrice(pkg.priceThb, "usd");
     const priceUsd = usdPrice.stripeAmount / 100; // Convert from cents to dollars
 
-    const origin = request.headers.get("origin") || "http://localhost:3000";
+    const origin = request.headers.get("origin") || "https://fastcaption.app";
 
     const result = await createCryptoInvoice({
       priceAmount: priceUsd,

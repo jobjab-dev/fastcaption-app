@@ -18,8 +18,8 @@ npx auth secret
 3. ไปที่ **APIs & Services → Credentials → Create Credentials → OAuth Client ID**
 4. เลือก **Web Application**
 5. ตั้งค่า:
-   - **Authorized JavaScript origins**: `http://localhost:3000`
-   - **Authorized redirect URIs**: `http://localhost:3000/api/auth/callback/google`
+   - **Authorized JavaScript origins**: `http://fastcaption.app`
+   - **Authorized redirect URIs**: `http://fastcaption.app/api/auth/callback/google`
 6. Copy **Client ID** และ **Client Secret**
 
 ใส่ลงไฟล์ `d:\tiktok\webapp\.env.local`:
@@ -58,7 +58,7 @@ cd d:\tiktok\webapp
 npm run dev
 ```
 
-เปิด **http://localhost:3000** ในเบราว์เซอร์
+เปิด **http://fastcaption.app** ในเบราว์เซอร์
 
 ---
 
@@ -109,5 +109,5 @@ STRIPE_PUBLISHABLE_KEY=pk_test_xxxxx
 DATABASE_URL="file:./dev.db"
 
 # Auth URL
-AUTH_URL=http://localhost:3000
+AUTH_URL=http://fastcaption.app
 ```

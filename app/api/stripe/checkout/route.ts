@@ -53,8 +53,8 @@ export async function POST(request: NextRequest) {
         packageId: pkg.id,
         priceThb: String(pkg.priceThb),
       },
-      success_url: `${request.headers.get("origin") || "http://localhost:3000"}/dashboard?payment=success&credits=${pkg.credits}`,
-      cancel_url: `${request.headers.get("origin") || "http://localhost:3000"}/pricing?payment=cancelled`,
+      success_url: `${request.headers.get("origin") || "https://fastcaption.app"}/dashboard?payment=success&credits=${pkg.credits}`,
+      cancel_url: `${request.headers.get("origin") || "https://fastcaption.app"}/pricing?payment=cancelled`,
     });
 
     return NextResponse.json({ url: session.url });
