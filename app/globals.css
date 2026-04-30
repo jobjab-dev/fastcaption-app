@@ -68,12 +68,14 @@ a:hover {
 .page {
   flex: 1;
   padding: 40px 16px;
+  overflow-x: hidden;
 }
 
 .container {
   width: 100%;
   max-width: 1100px;
   margin: 0 auto;
+  overflow: hidden;
 }
 
 /* ── Typography ── */
@@ -243,13 +245,14 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
+  overflow: hidden;
 }
 @media (max-width: 800px) {
   .dashboard-panels { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
-  .table-wrapper { overflow-x: hidden; }
-  .table-wrapper table { min-width: 0; table-layout: fixed; }
+  .table-wrapper { overflow-x: auto; }
+  .table-wrapper table { min-width: 0; }
   th, td { padding: 10px 10px; font-size: 0.8rem; }
 }
 
@@ -287,6 +290,7 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
   padding: 16px;
   margin-bottom: 10px;
   transition: border-color 0.2s;
+  overflow: hidden;
 }
 .job-card:hover { border-color: var(--border-hover); }
 .job-card:last-child { margin-bottom: 0; }
@@ -296,9 +300,8 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
   font-size: 0.95rem;
   margin-bottom: 4px;
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 .job-meta {
   font-size: 0.8rem;
