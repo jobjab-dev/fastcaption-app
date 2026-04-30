@@ -6,9 +6,6 @@ const nextConfig: NextConfig = {
     // effect library (replicate SDK dep) ships .ts source files with strict errors
     ignoreBuildErrors: true,
   },
-  outputFileTracingIncludes: {
-    "/*": ["./app/generated/prisma/*.node"],
-  },
   experimental: {
     serverActions: {
       bodySizeLimit: "50mb",
