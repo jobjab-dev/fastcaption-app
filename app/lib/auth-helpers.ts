@@ -33,15 +33,19 @@ export async function ensureUserExists() {
   if (user) return user;
 
   // Create new user
+  const userEmail = supabaseUser.email || supabaseUser.phone || `${supabaseUser.id}@phone.user`;
+  const userName =
+    supabaseUser.user_metadata?.full_name ||
+    supabaseUser.user_metadata?.name ||
+    supabaseUser.email?.split("@")[0] ||
+    (supabaseUser.phone ? `User ${supabaseUser.phone.slice(-4)}` : null) ||
+    "User";
+
   user = await prisma.user.create({
     data: {
       supabaseUserId: supabaseUser.id,
-      email: supabaseUser.email || "",
-      name:
-        supabaseUser.user_metadata?.full_name ||
-        supabaseUser.user_metadata?.name ||
-        supabaseUser.email?.split("@")[0] ||
-        "User",
+      email: userEmail,
+      name: userName,
       image: supabaseUser.user_metadata?.avatar_url || null,
       credits: 5000,
     },
