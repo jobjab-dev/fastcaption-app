@@ -1,56 +1,76 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/app/lib/supabase/client";
+import { Suspense } from "react";
 
 /**
  * Client-side auth callback handler.
- * Supabase magic link redirects here with hash fragments (#access_token=...)
- * that are invisible to server-side route handlers.
- * This page processes the hash on the client and redirects to dashboard.
+ * Handles both:
+ * 1. PKCE flow: ?code=xxx (magic link & OAuth)
+ * 2. Implicit flow: #access_token=xxx (fallback)
  */
-export default function AuthCallbackPage() {
+function CallbackHandler() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createSupabaseBrowserClient();
 
   useEffect(() => {
-    // The Supabase client automatically detects hash fragments
-    // and exchanges them for a session.
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === "SIGNED_IN" && session) {
-          // Sync user to DB
-          try {
-            await fetch("/api/auth/sync", { method: "POST" });
-          } catch (e) {
-            console.error("[auth/callback] DB sync error:", e);
-          }
-          router.replace("/dashboard");
+    const handleCallback = async () => {
+      const code = searchParams.get("code");
+
+      if (code) {
+        // ── PKCE flow: exchange the code for a session ──
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          console.error("[auth/callback] Code exchange error:", error.message);
+          router.replace("/login?error=exchange_failed");
+          return;
         }
       }
-    );
 
-    // Also check if already signed in (e.g. session from URL hash was auto-processed)
-    const checkSession = async () => {
+      // Check if session exists (either from code exchange or hash fragment)
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
+        // Sync user to DB
         try {
           await fetch("/api/auth/sync", { method: "POST" });
         } catch (e) {
           console.error("[auth/callback] DB sync error:", e);
         }
         router.replace("/dashboard");
+        return;
       }
+
+      // No code and no session — listen for auth state change (hash fragment)
+      const { data: authListener } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          if (event === "SIGNED_IN" && session) {
+            try {
+              await fetch("/api/auth/sync", { method: "POST" });
+            } catch (e) {
+              console.error("[auth/callback] DB sync error:", e);
+            }
+            router.replace("/dashboard");
+          }
+        }
+      );
+
+      // Timeout: if nothing happens in 10 seconds, redirect to login
+      const timeout = setTimeout(() => {
+        console.error("[auth/callback] Timeout — no session established");
+        router.replace("/login?error=timeout");
+      }, 10000);
+
+      return () => {
+        authListener.subscription.unsubscribe();
+        clearTimeout(timeout);
+      };
     };
 
-    // Give Supabase a moment to process the hash fragment
-    setTimeout(checkSession, 1000);
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, [router, supabase.auth]);
+    handleCallback();
+  }, [router, searchParams, supabase.auth]);
 
   return (
     <div
@@ -69,5 +89,27 @@ export default function AuthCallbackPage() {
         Signing you in...
       </p>
     </div>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="page"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "calc(100vh - 60px)",
+          }}
+        >
+          <span className="spinner spinner-lg" />
+        </div>
+      }
+    >
+      <CallbackHandler />
+    </Suspense>
   );
 }
