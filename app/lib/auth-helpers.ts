@@ -9,9 +9,25 @@ export async function getAuthUser() {
   const supabaseUser = await getSupabaseUser();
   if (!supabaseUser) return null;
 
-  const user = await prisma.user.findUnique({
+  // Primary lookup by Supabase Auth ID
+  let user = await prisma.user.findUnique({
     where: { supabaseUserId: supabaseUser.id },
   });
+
+  // Fallback: user may have switched login method (Google → Email or vice versa)
+  // with the same email but a different Supabase identity
+  if (!user && supabaseUser.email) {
+    user = await prisma.user.findUnique({
+      where: { email: supabaseUser.email },
+    });
+    // Link this identity to the existing account
+    if (user) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { supabaseUserId: supabaseUser.id },
+      });
+    }
+  }
 
   return user;
 }
@@ -32,24 +48,38 @@ export async function ensureUserExists() {
 
   if (user) return user;
 
-  // Create new user
-  const userEmail = supabaseUser.email || supabaseUser.phone || `${supabaseUser.id}@phone.user`;
+  // Try to create new user — if email already exists (e.g. user signed up
+  // with Google first, now using email magic link), link to existing account.
+  const userEmail = supabaseUser.email || `${supabaseUser.id}@unknown.user`;
   const userName =
     supabaseUser.user_metadata?.full_name ||
     supabaseUser.user_metadata?.name ||
     supabaseUser.email?.split("@")[0] ||
-    (supabaseUser.phone ? `User ${supabaseUser.phone.slice(-4)}` : null) ||
     "User";
 
-  user = await prisma.user.create({
-    data: {
-      supabaseUserId: supabaseUser.id,
-      email: userEmail,
-      name: userName,
-      image: supabaseUser.user_metadata?.avatar_url || null,
-      credits: 5000,
-    },
-  });
+  try {
+    user = await prisma.user.create({
+      data: {
+        supabaseUserId: supabaseUser.id,
+        email: userEmail,
+        name: userName,
+        image: supabaseUser.user_metadata?.avatar_url || null,
+        credits: 5000,
+      },
+    });
+  } catch (err: unknown) {
+    // P2002 = Unique constraint violation (email already exists)
+    const prismaErr = err as { code?: string };
+    if (prismaErr.code === "P2002") {
+      // Link existing account to this Supabase identity
+      user = await prisma.user.update({
+        where: { email: userEmail },
+        data: { supabaseUserId: supabaseUser.id },
+      });
+      return user; // Existing user — skip signup bonus & referral
+    }
+    throw err; // Re-throw unexpected errors
+  }
 
   // Record signup bonus transaction
   await prisma.transaction.create({
