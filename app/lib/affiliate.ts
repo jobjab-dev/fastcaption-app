@@ -1,8 +1,8 @@
 import { prisma } from "./db";
+import { addCredits } from "./credits";
 import crypto from "crypto";
 
 const COMMISSION_RATE = 0.20; // 20%
-const MIN_PAYOUT_THB = 500;
 const COOKIE_DURATION_DAYS = 30;
 
 /** Generate a unique referral code like "FC-a1b2c3" */
@@ -101,11 +101,12 @@ export async function bindReferral(newUserId: string, referralCode: string) {
   return true;
 }
 
-/** Create a commission for the affiliate when a referred user purchases credits */
+/** Create a commission for the affiliate when a referred user purchases credits.
+ *  Pays 20% of purchased credits instantly to the affiliate's account. */
 export async function createCommission(
   referredUserId: string,
   transactionId: string,
-  purchaseAmountThb: number
+  purchasedCredits: number
 ) {
   // Find the affiliate who referred this user
   const user = await prisma.user.findUnique({
@@ -123,15 +124,24 @@ export async function createCommission(
 
   if (!affiliate || affiliate.affiliateStatus !== "active") return null;
 
-  const commissionAmount = Math.round(purchaseAmountThb * COMMISSION_RATE * 100) / 100;
+  const commissionCredits = Math.round(purchasedCredits * COMMISSION_RATE);
 
+  // Add credits to affiliate's account immediately
+  await addCredits(
+    affiliate.id,
+    commissionCredits,
+    "affiliate_commission",
+    `🤝 Affiliate commission: +${commissionCredits.toLocaleString()} credits (${Math.round(COMMISSION_RATE * 100)}% of ${purchasedCredits.toLocaleString()})`,
+  );
+
+  // Record the commission for tracking (already paid)
   const commission = await prisma.commission.create({
     data: {
       affiliateId: affiliate.id,
       referredUserId,
       transactionId,
-      amountThb: commissionAmount,
-      status: "pending",
+      amountThb: commissionCredits, // repurposed: stores credits earned
+      status: "paid", // instant payout
     },
   });
 
@@ -156,10 +166,7 @@ export async function getAffiliateStats(userId: string) {
     totalClicks,
     totalReferrals,
     commissions,
-    pendingCommission,
-    paidCommission,
     recentCommissions,
-    payoutRequests,
   ] = await Promise.all([
     // Total clicks
     prisma.affiliateClick.count({
@@ -169,21 +176,11 @@ export async function getAffiliateStats(userId: string) {
     prisma.user.count({
       where: { referredBy: userId },
     }),
-    // All commissions
+    // All commissions (amountThb field stores credits earned)
     prisma.commission.aggregate({
       where: { affiliateId: userId },
       _sum: { amountThb: true },
       _count: true,
-    }),
-    // Pending commission balance
-    prisma.commission.aggregate({
-      where: { affiliateId: userId, status: "pending" },
-      _sum: { amountThb: true },
-    }),
-    // Paid commission total
-    prisma.commission.aggregate({
-      where: { affiliateId: userId, status: "paid" },
-      _sum: { amountThb: true },
     }),
     // Recent commissions
     prisma.commission.findMany({
@@ -192,17 +189,11 @@ export async function getAffiliateStats(userId: string) {
       take: 20,
       select: {
         id: true,
-        amountThb: true,
+        amountThb: true, // stores credits earned
         status: true,
         createdAt: true,
         referredUserId: true,
       },
-    }),
-    // Payout requests
-    prisma.payoutRequest.findMany({
-      where: { affiliateId: userId },
-      orderBy: { createdAt: "desc" },
-      take: 10,
     }),
   ]);
 
@@ -211,44 +202,7 @@ export async function getAffiliateStats(userId: string) {
     totalClicks,
     totalReferrals,
     totalCommissions: commissions._count,
-    totalEarned: commissions._sum.amountThb || 0,
-    pendingBalance: pendingCommission._sum.amountThb || 0,
-    paidBalance: paidCommission._sum.amountThb || 0,
+    totalCreditsEarned: commissions._sum.amountThb || 0,
     recentCommissions,
-    payoutRequests,
-    canRequestPayout: (pendingCommission._sum.amountThb || 0) >= MIN_PAYOUT_THB,
-    minPayoutThb: MIN_PAYOUT_THB,
   };
-}
-
-/** Request a payout */
-export async function requestPayout(
-  userId: string,
-  method: "bank_transfer" | "promptpay",
-  accountInfo: string
-) {
-  const stats = await getAffiliateStats(userId);
-  if (!stats) throw new Error("Not an affiliate");
-  if (stats.pendingBalance < MIN_PAYOUT_THB) {
-    throw new Error(`Minimum payout is ฿${MIN_PAYOUT_THB}. Current balance: ฿${stats.pendingBalance}`);
-  }
-
-  // Check no pending payout request
-  const pendingPayout = await prisma.payoutRequest.findFirst({
-    where: { affiliateId: userId, status: "pending" },
-  });
-  if (pendingPayout) {
-    throw new Error("You already have a pending payout request");
-  }
-
-  const payout = await prisma.payoutRequest.create({
-    data: {
-      affiliateId: userId,
-      amountThb: stats.pendingBalance,
-      method,
-      accountInfo,
-    },
-  });
-
-  return payout;
 }

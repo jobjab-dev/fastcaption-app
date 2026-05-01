@@ -38,12 +38,12 @@ export async function POST(request: NextRequest) {
 
         console.log(`[omise/webhook] ✅ Added ${credits} credits to user ${userId} via ${charge.source?.type}`);
 
-        // Create affiliate commission if user was referred
-        if (priceThb > 0) {
+        // Create affiliate commission if user was referred (20% of credits)
+        if (credits > 0) {
           try {
-            const commission = await createCommission(userId, charge.id, priceThb);
+            const commission = await createCommission(userId, charge.id, credits);
             if (commission) {
-              console.log(`[affiliate] Commission ฿${commission.amountThb} created`);
+              console.log(`[affiliate] Commission ${commission.amountThb} credits given`);
             }
           } catch (e) {
             console.error("[affiliate] Failed to create commission:", e);

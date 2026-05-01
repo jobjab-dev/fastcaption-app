@@ -37,16 +37,16 @@ export async function POST(request: NextRequest) {
       );
       console.log(`[stripe] Added ${credits} credits to user ${userId}`);
 
-      // Create affiliate commission if user was referred
-      if (priceThb > 0) {
+      // Create affiliate commission if user was referred (20% of purchased credits)
+      if (credits > 0) {
         try {
           const commission = await createCommission(
             userId,
             session.payment_intent as string,
-            priceThb
+            credits
           );
           if (commission) {
-            console.log(`[affiliate] Commission ฿${commission.amountThb} created for affiliate ${commission.affiliateId}`);
+            console.log(`[affiliate] Commission ${commission.amountThb} credits given to affiliate ${commission.affiliateId}`);
           }
         } catch (e) {
           console.error("[affiliate] Failed to create commission:", e);

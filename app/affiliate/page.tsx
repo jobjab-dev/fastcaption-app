@@ -5,19 +5,10 @@ import { useLocale } from "@/app/components/LocaleProvider";
 
 interface CommissionEntry {
   id: string;
-  amountThb: number;
+  amountThb: number; // stores credits earned
   status: string;
   createdAt: string;
   referredUserId: string;
-}
-
-interface PayoutEntry {
-  id: string;
-  amountThb: number;
-  method: string;
-  status: string;
-  createdAt: string;
-  processedAt: string | null;
 }
 
 interface AffiliateStats {
@@ -26,13 +17,8 @@ interface AffiliateStats {
   totalClicks?: number;
   totalReferrals?: number;
   totalCommissions?: number;
-  totalEarned?: number;
-  pendingBalance?: number;
-  paidBalance?: number;
+  totalCreditsEarned?: number;
   recentCommissions?: CommissionEntry[];
-  payoutRequests?: PayoutEntry[];
-  canRequestPayout?: boolean;
-  minPayoutThb?: number;
 }
 
 export default function AffiliatePage() {
@@ -41,10 +27,6 @@ export default function AffiliatePage() {
   const [loading, setLoading] = useState(true);
   const [activating, setActivating] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [payoutForm, setPayoutForm] = useState(false);
-  const [payoutMethod, setPayoutMethod] = useState<"bank_transfer" | "promptpay">("promptpay");
-  const [accountInfo, setAccountInfo] = useState("");
-  const [payoutSubmitting, setPayoutSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
   const fetchStats = async () => {
@@ -89,34 +71,6 @@ export default function AffiliatePage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handlePayout = async () => {
-    if (!accountInfo.trim()) {
-      setMessage("❌ กรุณากรอกข้อมูลบัญชี");
-      return;
-    }
-    setPayoutSubmitting(true);
-    try {
-      const res = await fetch("/api/affiliate/payout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method: payoutMethod, accountInfo }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setMessage("✅ ส่งคำขอเบิกเงินแล้ว! รอ admin อนุมัติ");
-        setPayoutForm(false);
-        setAccountInfo("");
-        await fetchStats();
-      } else {
-        setMessage(`❌ ${data.error}`);
-      }
-    } catch {
-      setMessage("❌ เกิดข้อผิดพลาด");
-    } finally {
-      setPayoutSubmitting(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="page">
@@ -143,10 +97,10 @@ export default function AffiliatePage() {
               <h3 style={{ marginBottom: "16px", fontSize: "1.1rem" }}>{t("aff.benefits")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 {[
-                  { icon: "💰", text: t("aff.b1", { pct: 20 }) },
-                  { icon: "🔗", text: t("aff.b2") },
-                  { icon: "📊", text: t("aff.b3") },
-                  { icon: "💸", text: t("aff.b4", { amount: "500" }) },
+                  { icon: "🎁", text: t("aff.b1", { pct: 20 }) },
+                  { icon: "⚡", text: t("aff.b2") },
+                  { icon: "🔗", text: t("aff.b3") },
+                  { icon: "📊", text: t("aff.b4") },
                   { icon: "🍪", text: t("aff.b5") },
                 ].map((item, i) => (
                   <div key={i} style={{ display: "flex", gap: "10px", alignItems: "center" }}>
@@ -237,180 +191,57 @@ export default function AffiliatePage() {
             <div className="stat-value accent">{(stats.totalReferrals || 0).toLocaleString()}</div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">{t("aff.pending")}</div>
-            <div className="stat-value" style={{ color: "var(--warning)" }}>
-              ฿{(stats.pendingBalance || 0).toLocaleString()}
-            </div>
+            <div className="stat-label">{t("aff.commissions")}</div>
+            <div className="stat-value">{(stats.totalCommissions || 0).toLocaleString()}</div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">{t("aff.totalEarned")}</div>
+            <div className="stat-label">{t("aff.totalCredits")}</div>
             <div className="stat-value" style={{ color: "var(--success)" }}>
-              ฿{(stats.totalEarned || 0).toLocaleString()}
+              {(stats.totalCreditsEarned || 0).toLocaleString()}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "2px" }}>
+              credits
             </div>
           </div>
         </div>
 
-        {/* Payout Section */}
-        {stats.canRequestPayout && !payoutForm && (
-          <button
-            className="btn btn-primary"
-            style={{ marginBottom: "24px" }}
-            onClick={() => setPayoutForm(true)}
-          >
-            {t("aff.withdraw", { amount: (stats.pendingBalance || 0).toLocaleString() })}
-          </button>
-        )}
-
-        {!stats.canRequestPayout && (stats.pendingBalance || 0) > 0 && (
-          <div style={{ marginBottom: "24px", padding: "12px 16px", borderRadius: "8px", background: "rgba(250,204,21,0.1)", border: "1px solid rgba(250,204,21,0.2)", fontSize: "0.88rem", color: "var(--text-secondary)" }}>
-            💡 เบิกเงินได้เมื่อยอดสะสมถึง ฿{stats.minPayoutThb} (ปัจจุบัน ฿{(stats.pendingBalance || 0).toLocaleString()})
-          </div>
-        )}
-
-        {payoutForm && (
-          <div className="card" style={{ marginBottom: "24px" }}>
-            <h3 style={{ marginBottom: "16px" }}>💸 ขอเบิกเงิน</h3>
-            <div style={{ marginBottom: "12px" }}>
-              <label className="form-label">วิธีรับเงิน</label>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button
-                  className={`btn ${payoutMethod === "promptpay" ? "btn-primary" : "btn-secondary"}`}
-                  onClick={() => setPayoutMethod("promptpay")}
-                  style={{ flex: 1 }}
-                >
-                  PromptPay
-                </button>
-                <button
-                  className={`btn ${payoutMethod === "bank_transfer" ? "btn-primary" : "btn-secondary"}`}
-                  onClick={() => setPayoutMethod("bank_transfer")}
-                  style={{ flex: 1 }}
-                >
-                  โอนธนาคาร
-                </button>
-              </div>
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <label className="form-label">
-                {payoutMethod === "promptpay" ? "เบอร์ PromptPay" : "ชื่อบัญชี + เลขบัญชี + ธนาคาร"}
-              </label>
-              <input
-                value={accountInfo}
-                onChange={(e) => setAccountInfo(e.target.value)}
-                placeholder={payoutMethod === "promptpay" ? "0812345678" : "ชื่อ นามสกุล / 123-4-56789-0 / กสิกร"}
-                style={{
-                  width: "100%",
-                  padding: "10px 14px",
-                  borderRadius: "8px",
-                  border: "1px solid var(--border)",
-                  background: "var(--surface)",
-                  color: "var(--text-primary)",
-                  fontSize: "0.9rem",
-                  fontFamily: "inherit",
-                }}
-              />
-            </div>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button
-                className="btn btn-primary"
-                onClick={handlePayout}
-                disabled={payoutSubmitting}
-                style={{ flex: 1 }}
-              >
-                {payoutSubmitting ? <><span className="spinner" /> กำลังส่ง...</> : `ยืนยันเบิก ฿${(stats.pendingBalance || 0).toLocaleString()}`}
-              </button>
-              <button className="btn btn-secondary" onClick={() => setPayoutForm(false)}>
-                ยกเลิก
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Two columns: Commissions + Payouts */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
-          {/* Commission History */}
-          <div>
-            <h2 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>💰 ค่าคอมมิชชั่น</h2>
-            {!stats.recentCommissions?.length ? (
-              <div className="card">
-                <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: "24px 0" }}>
-                  ยังไม่มีค่าคอม — แชร์ลิงก์ให้เพื่อนเลย!
-                </p>
-              </div>
-            ) : (
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>จำนวน</th>
-                      <th>สถานะ</th>
-                      <th>วันที่</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.recentCommissions.map((c) => (
-                      <tr key={c.id}>
-                        <td style={{ color: "var(--success)", fontWeight: 600 }}>
-                          ฿{c.amountThb.toLocaleString()}
-                        </td>
-                        <td>
-                          <span className={`status-badge ${c.status === "paid" ? "done" : c.status === "pending" ? "processing" : ""}`}>
-                            {c.status === "pending" ? "รอดำเนินการ" : c.status === "approved" ? "อนุมัติแล้ว" : c.status === "paid" ? "จ่ายแล้ว" : c.status}
-                          </span>
-                        </td>
-                        <td style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
-                          {new Date(c.createdAt).toLocaleDateString("th-TH")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Payout History */}
-          <div>
-            <h2 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>💸 ประวัติเบิกเงิน</h2>
-            {!stats.payoutRequests?.length ? (
-              <div className="card">
-                <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: "24px 0" }}>
-                  ยังไม่มีการเบิกเงิน
-                </p>
-              </div>
-            ) : (
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>จำนวน</th>
-                      <th>วิธี</th>
-                      <th>สถานะ</th>
-                      <th>วันที่</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.payoutRequests.map((p) => (
-                      <tr key={p.id}>
-                        <td style={{ fontWeight: 600 }}>฿{p.amountThb.toLocaleString()}</td>
-                        <td style={{ fontSize: "0.85rem" }}>
-                          {p.method === "promptpay" ? "PromptPay" : "โอนธนาคาร"}
-                        </td>
-                        <td>
-                          <span className={`status-badge ${p.status === "paid" ? "done" : p.status === "rejected" ? "failed" : "processing"}`}>
-                            {p.status === "pending" ? "รอ" : p.status === "approved" ? "อนุมัติ" : p.status === "paid" ? "จ่ายแล้ว" : "ปฏิเสธ"}
-                          </span>
-                        </td>
-                        <td style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
-                          {new Date(p.createdAt).toLocaleDateString("th-TH")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+        {/* How it works */}
+        <div className="card" style={{ marginBottom: "24px", padding: "16px 20px" }}>
+          <h3 style={{ marginBottom: "12px", fontSize: "1rem" }}>💡 {t("aff.howItWorks")}</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.88rem", color: "var(--text-secondary)" }}>
+            <div>1. {t("aff.step1")}</div>
+            <div>2. {t("aff.step2")}</div>
+            <div>3. {t("aff.step3")}</div>
           </div>
         </div>
+
+        {/* Commission History */}
+        <h2 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>🎁 {t("aff.commissionHistory")}</h2>
+        {!stats.recentCommissions?.length ? (
+          <div className="card">
+            <p style={{ color: "var(--text-secondary)", textAlign: "center", padding: "24px 0" }}>
+              {t("aff.noCommissions")}
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {stats.recentCommissions.map((c) => (
+              <div key={c.id} className="card" style={{ padding: "14px 16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "var(--success)", fontWeight: 700, fontSize: "1rem" }}>
+                    +{c.amountThb.toLocaleString()} credits
+                  </span>
+                  <span className="status-badge done" style={{ fontSize: "0.7rem" }}>
+                    ✓ {t("aff.credited")}
+                  </span>
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  {new Date(c.createdAt).toLocaleDateString("th-TH")} · {new Date(c.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
