@@ -1,16 +1,16 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
 
-/* ── Design Tokens ── */
+/* ── Design Tokens (Dark) ── */
 :root {
   --bg: #0b0e17;
   --surface: #111827;
   --surface-2: #1a2236;
   --border: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.16);
+  --border-hover: rgba(255, 255, 255, 0.14);
 
   --text-primary: #f1f5f9;
-  --text-secondary: rgba(241, 245, 249, 0.6);
-  --text-muted: rgba(241, 245, 249, 0.35);
+  --text-secondary: rgba(241, 245, 249, 0.55);
+  --text-muted: rgba(241, 245, 249, 0.3);
 
   --accent: #f97316;
   --accent-light: #fb923c;
@@ -21,7 +21,7 @@
   --warning: #fbbf24;
 
   --radius: 10px;
-  --radius-lg: 16px;
+  --radius-lg: 14px;
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -57,12 +57,12 @@ body {
 }
 
 a {
-  color: var(--accent-light);
+  color: var(--accent);
   text-decoration: none;
   transition: color 0.2s;
 }
 a:hover {
-  color: #fff;
+  color: var(--accent-light);
 }
 
 /* ── Layout ── */
@@ -125,7 +125,7 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
 }
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(249, 115, 22, 0.4);
+  box-shadow: 0 4px 20px rgba(249, 115, 22, 0.35);
 }
 .btn-primary:active:not(:disabled) {
   transform: translateY(0);
@@ -344,7 +344,7 @@ th, td { padding: 12px 16px; text-align: left; font-size: 0.9rem; border-bottom:
 th { font-weight: 600; color: var(--text-muted); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; }
 td { color: var(--text-primary); }
 tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: rgba(255,255,255,0.02); }
+tbody tr:hover { background: var(--surface-2); }
 
 /* ── Pricing Grid / Mobile Carousel ── */
 .pricing-grid {
@@ -499,4 +499,83 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
 }
 @media (max-width: 600px) {
   .features-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ── Subtle entrance animation ── */
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: fadeInUp 0.5s ease forwards;
+}
+
+@keyframes fadeInUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-up:nth-child(1) { animation-delay: 0s; }
+.fade-in-up:nth-child(2) { animation-delay: 0.06s; }
+.fade-in-up:nth-child(3) { animation-delay: 0.12s; }
+.fade-in-up:nth-child(4) { animation-delay: 0.18s; }
+.fade-in-up:nth-child(5) { animation-delay: 0.24s; }
+.fade-in-up:nth-child(6) { animation-delay: 0.30s; }
+
+/* ── Divider ── */
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 48px 0;
+}
+
+/* ── Peek Carousel ── */
+.peek-carousel {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  max-width: 1100px;
+  margin: 0 auto;
+  gap: 0;
+  overflow: hidden;
+}
+
+.peek-center {
+  flex: 0 0 560px;
+  z-index: 2;
+}
+
+.peek-side {
+  flex: 0 0 270px;
+  cursor: pointer;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+/* Left peek — fades to transparent on the left edge */
+.peek-left {
+  -webkit-mask-image: linear-gradient(to left, rgba(0,0,0,0.45) 0%, transparent 85%);
+  mask-image: linear-gradient(to left, rgba(0,0,0,0.45) 0%, transparent 85%);
+}
+
+/* Right peek — fades to transparent on the right edge */
+.peek-right {
+  -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,0.45) 0%, transparent 85%);
+  mask-image: linear-gradient(to right, rgba(0,0,0,0.45) 0%, transparent 85%);
+}
+
+/* Mobile: hide peeks, full width center */
+@media (max-width: 700px) {
+  .peek-side { display: none; }
+  .peek-center { flex: 1 1 auto; max-width: 100%; padding: 0 16px; }
+}
+
+.blink-cursor {
+  animation: cursorBlink 1s step-end infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }

@@ -331,7 +331,7 @@ function CryptoSelector({
                           transition: "background 0.15s ease",
                         }}
                         onMouseEnter={(e) => {
-                          if (selectedCoin !== c.id) e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                          if (selectedCoin !== c.id) e.currentTarget.style.background = "var(--surface-2)";
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.background = selectedCoin === c.id ? "rgba(249, 115, 22, 0.12)" : "transparent";
@@ -525,7 +525,7 @@ function ThaiPaymentSelector({
                     transition: "background 0.15s ease",
                   }}
                   onMouseEnter={(e) => {
-                    if (selectedMethod !== m.id) e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                    if (selectedMethod !== m.id) e.currentTarget.style.background = "var(--surface-2)";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = selectedMethod === m.id ? "rgba(249, 115, 22, 0.12)" : "transparent";

@@ -368,8 +368,8 @@ export default function TranscribePage() {
                   position: "absolute",
                   top: "12px",
                   right: "12px",
-                  background: "rgba(255,255,255,0.1)",
-                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
                   borderRadius: "50%",
                   width: "32px",
                   height: "32px",
@@ -382,7 +382,7 @@ export default function TranscribePage() {
                   transition: "all 0.2s",
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.3)"; e.currentTarget.style.color = "#f87171"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
                 title="ยกเลิกไฟล์"
               >
                 ✕
@@ -468,7 +468,7 @@ export default function TranscribePage() {
               width: "100%",
               height: "6px",
               borderRadius: "3px",
-              background: "rgba(255,255,255,0.1)",
+              background: "var(--surface-2)",
               overflow: "hidden",
             }}>
               <div style={{
@@ -655,8 +655,8 @@ export default function TranscribePage() {
                     position: "absolute",
                     top: "8px",
                     right: "8px",
-                    background: "rgba(255,255,255,0.1)",
-                    border: "1px solid rgba(255,255,255,0.2)",
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border)",
                     borderRadius: "50%",
                     width: "28px",
                     height: "28px",
@@ -669,7 +669,7 @@ export default function TranscribePage() {
                     transition: "all 0.2s",
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.3)"; e.currentTarget.style.color = "#f87171"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
                   title="ยกเลิกไฟล์"
                 >
                   ✕

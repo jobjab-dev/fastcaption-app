@@ -74,7 +74,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en">
       <head>
         {/* Explicit favicon link for maximum Google Search compatibility */}
         <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -82,8 +82,7 @@ export default function RootLayout({
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         {/* Mobile browser theme color */}
-        <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
-        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#0b0e17" />
         {/* Windows tile */}
         <meta name="msapplication-TileImage" content="/android-chrome-192x192.png" />
       </head>

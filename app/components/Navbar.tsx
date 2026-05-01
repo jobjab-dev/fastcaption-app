@@ -74,9 +74,9 @@ export function Navbar() {
           justifyContent: "space-between",
           padding: "0 1.25rem",
           height: "56px",
-          background: "rgba(10,10,10,0.85)",
+          background: "rgba(11,14,23,0.85)",
           backdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
           position: "sticky",
           top: 0,
           zIndex: 1000,
@@ -92,7 +92,7 @@ export function Navbar() {
             fontWeight: 800,
             fontSize: "1.2rem",
             letterSpacing: "-0.5px",
-            background: "linear-gradient(135deg, #f97316, #1e3a5f)",
+            background: "linear-gradient(135deg, #f97316, #ea580c)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
             textDecoration: "none",
@@ -122,8 +122,8 @@ export function Navbar() {
                   borderRadius: "8px",
                   fontSize: "0.85rem",
                   fontWeight: active ? 600 : 400,
-                  color: active ? "#fff" : "rgba(255,255,255,0.6)",
-                  background: active ? "rgba(167,139,250,0.15)" : "transparent",
+                  color: active ? "#fff" : "rgba(255,255,255,0.5)",
+                  background: active ? "rgba(249,115,22,0.12)" : "transparent",
                   textDecoration: "none",
                   transition: "all 0.2s ease",
                 }}
@@ -146,17 +146,15 @@ export function Navbar() {
               gap: "4px",
               padding: "4px 10px",
               borderRadius: "8px",
-              border: "1px solid rgba(255,255,255,0.1)",
+              border: "1px solid var(--border)",
               background: "transparent",
-              color: "rgba(255,255,255,0.7)",
+              color: "var(--text-secondary)",
               cursor: "pointer",
               fontSize: "0.78rem",
               fontWeight: 500,
               fontFamily: "inherit",
               transition: "all 0.2s",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "#fff"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.7)"; }}
           >
             🌐 {locale === "th" ? "TH" : "EN"}
           </button>
@@ -168,7 +166,7 @@ export function Navbar() {
                 width: "32px",
                 height: "32px",
                 borderRadius: "50%",
-                background: "rgba(255,255,255,0.1)",
+                background: "var(--surface-2)",
                 animation: "pulse 1.5s ease infinite",
               }} />
             ) : user ? (
@@ -181,9 +179,9 @@ export function Navbar() {
                     gap: "8px",
                     padding: "4px 12px 4px 4px",
                     borderRadius: "99px",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    background: menuOpen ? "rgba(255,255,255,0.08)" : "transparent",
-                    color: "#fff",
+                    border: "1px solid var(--border)",
+                    background: menuOpen ? "var(--surface-2)" : "transparent",
+                    color: "var(--text-primary)",
                     cursor: "pointer",
                     transition: "all 0.2s",
                     fontFamily: "inherit",
@@ -227,7 +225,7 @@ export function Navbar() {
                     background: "var(--surface)",
                     border: "1px solid var(--border)",
                     borderRadius: "12px",
-                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
                     overflow: "hidden",
                     zIndex: 50,
                   }}>
@@ -326,7 +324,7 @@ export function Navbar() {
                   borderRadius: "8px",
                   fontSize: "0.9rem",
                   fontWeight: 600,
-                  background: "linear-gradient(135deg, #f97316, #1e3a5f)",
+                  background: "linear-gradient(135deg, #f97316, #ea580c)",
                   color: "#fff",
                   textDecoration: "none",
                 }}
@@ -347,7 +345,7 @@ export function Navbar() {
               border: "none",
               cursor: "pointer",
               padding: "6px",
-              color: "#fff",
+              color: "var(--text-primary)",
             }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -378,7 +376,7 @@ export function Navbar() {
             left: 0,
             right: 0,
             bottom: 0,
-            background: "rgba(0,0,0,0.5)",
+            background: "var(--overlay-bg)",
             backdropFilter: "blur(4px)",
             zIndex: 999,
           }}
@@ -404,8 +402,8 @@ export function Navbar() {
                     padding: "14px 24px",
                     fontSize: "1rem",
                     fontWeight: active ? 700 : 500,
-                    color: active ? "#fff" : "rgba(255,255,255,0.6)",
-                    background: active ? "rgba(167,139,250,0.12)" : "transparent",
+                    color: active ? "var(--nav-text-active)" : "var(--nav-text)",
+                    background: active ? "var(--nav-active-bg)" : "transparent",
                     textDecoration: "none",
                     transition: "all 0.15s",
                   }}
@@ -433,7 +431,7 @@ export function Navbar() {
                         width: "32px",
                         height: "32px",
                         borderRadius: "50%",
-                        background: "linear-gradient(135deg, #f97316, #1e3a5f)",
+                        background: "linear-gradient(135deg, #f97316, #ea580c)",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
