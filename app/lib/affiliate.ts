@@ -135,17 +135,27 @@ export async function createCommission(
   );
 
   // Record the commission for tracking (already paid)
-  const commission = await prisma.commission.create({
-    data: {
-      affiliateId: affiliate.id,
-      referredUserId,
-      transactionId,
-      amountThb: commissionCredits, // repurposed: stores credits earned
-      status: "paid", // instant payout
-    },
-  });
-
-  return commission;
+  // Uses unique transactionId to prevent duplicate commissions on webhook retries
+  try {
+    const commission = await prisma.commission.create({
+      data: {
+        affiliateId: affiliate.id,
+        referredUserId,
+        transactionId,
+        amountThb: commissionCredits, // repurposed: stores credits earned
+        status: "paid", // instant payout
+      },
+    });
+    return commission;
+  } catch (err: unknown) {
+    const prismaErr = err as { code?: string };
+    if (prismaErr.code === "P2002") {
+      // Duplicate transactionId — commission already created (webhook retry)
+      console.log(`[affiliate] Duplicate commission skipped for tx ${transactionId}`);
+      return null;
+    }
+    throw err;
+  }
 }
 
 /** Get affiliate statistics for dashboard */

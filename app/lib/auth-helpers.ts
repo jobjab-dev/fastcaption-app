@@ -111,6 +111,8 @@ export async function ensureUserExists() {
           where: { code: refCode, convertedUserId: null },
           data: { convertedUserId: user.id },
         });
+        // Clear the cookie so it doesn't re-trigger on future logins
+        cookieStore.delete("ref_code");
       }
     }
   } catch {

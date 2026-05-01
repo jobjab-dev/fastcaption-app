@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyNowPaymentsSignature } from "@/app/lib/nowpayments";
 import { addCredits } from "@/app/lib/credits";
+import { createCommission } from "@/app/lib/affiliate";
 import { CREDIT_PACKAGES } from "@/app/lib/stripe";
 
 /**
@@ -32,17 +33,32 @@ export async function POST(request: NextRequest) {
         // Find package to get credits
         const pkg = CREDIT_PACKAGES.find((p) => p.id === packageId);
         if (pkg && userId) {
+          const paymentRef = `nowpay_${body.payment_id}`;
           const txDescription = `Purchased ${packageId}: ${pkg.credits.toLocaleString()} credits (via Crypto ${body.pay_currency || "unknown"})`;
           
-          await addCredits(
+          const { added } = await addCredits(
             userId,
             pkg.credits,
             "purchase",
             txDescription,
-            String(body.payment_id) // NOWPayments payment ID
+            paymentRef // NOWPayments payment ID as dedup key
           );
 
-          console.log(`[crypto/webhook] ✅ Added ${pkg.credits} credits to user ${userId} via ${body.pay_currency}`);
+          if (!added) {
+            console.log(`[crypto/webhook] Duplicate webhook skipped for ${paymentRef}`);
+          } else {
+            console.log(`[crypto/webhook] ✅ Added ${pkg.credits} credits to user ${userId} via ${body.pay_currency}`);
+
+            // Create affiliate commission if user was referred (20% of credits)
+            try {
+              const commission = await createCommission(userId, paymentRef, pkg.credits);
+              if (commission) {
+                console.log(`[affiliate] Commission ${commission.amountThb} credits given to affiliate ${commission.affiliateId}`);
+              }
+            } catch (e) {
+              console.error("[affiliate] Failed to create commission:", e);
+            }
+          }
         }
       }
     }

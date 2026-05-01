@@ -28,17 +28,20 @@ export async function POST(request: NextRequest) {
 
     if (userId && credits > 0) {
       const txDescription = `Purchased ${packageId}: ${credits.toLocaleString()} credits`;
-      await addCredits(
+      const { added } = await addCredits(
         userId,
         credits,
         "purchase",
         txDescription,
         session.payment_intent as string
       );
-      console.log(`[stripe] Added ${credits} credits to user ${userId}`);
 
-      // Create affiliate commission if user was referred (20% of purchased credits)
-      if (credits > 0) {
+      if (!added) {
+        console.log(`[stripe] Duplicate webhook skipped for ${session.payment_intent}`);
+      } else {
+        console.log(`[stripe] Added ${credits} credits to user ${userId}`);
+
+        // Create affiliate commission if user was referred (20% of purchased credits)
         try {
           const commission = await createCommission(
             userId,

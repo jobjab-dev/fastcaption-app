@@ -63,14 +63,27 @@ export async function deductCredits(
   }
 }
 
-/** Add credits to user account (e.g., after purchase) */
+/** Add credits to user account (e.g., after purchase).
+ *  If stripeId is provided, this is idempotent — duplicate calls with the
+ *  same stripeId will be silently skipped (prevents webhook retry exploits). */
 export async function addCredits(
   userId: string,
   credits: number,
   type: string,
   description: string,
   stripeId?: string
-): Promise<void> {
+): Promise<{ added: boolean }> {
+  // Idempotency guard: if a payment reference is provided, check for duplicates
+  if (stripeId) {
+    const existing = await prisma.transaction.findFirst({
+      where: { stripeId },
+    });
+    if (existing) {
+      console.log(`[credits] Duplicate payment skipped: ${stripeId}`);
+      return { added: false };
+    }
+  }
+
   await prisma.$transaction([
     prisma.user.update({
       where: { id: userId },
@@ -86,6 +99,8 @@ export async function addCredits(
       },
     }),
   ]);
+
+  return { added: true };
 }
 
 /** Give signup bonus (5000 credits) */

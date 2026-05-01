@@ -96,6 +96,7 @@ model Commission {
 
   @@index([affiliateId])
   @@index([referredUserId])
+  @@unique([transactionId])
 }
 
 model PayoutRequest {

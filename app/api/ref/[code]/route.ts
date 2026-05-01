@@ -23,7 +23,7 @@ export async function GET(
   const response = NextResponse.redirect(loginUrl);
 
   if (result) {
-    response.cookies.set("ref", code, {
+    response.cookies.set("ref_code", code, {
       maxAge: result.cookieDurationDays * 24 * 60 * 60, // 30 days
       path: "/",
       httpOnly: true,
