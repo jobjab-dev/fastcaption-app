@@ -328,7 +328,7 @@ export default function TranscribePage() {
         </div>
 
         {workMode === "align" && (
-          <div className="alert alert-info" style={{ marginBottom: "16px", padding: "12px 16px", borderRadius: "8px", background: "rgba(99, 102, 241, 0.15)", border: "1px solid rgba(99, 102, 241, 0.3)", fontSize: "0.9rem" }}>
+          <div className="alert alert-info" style={{ marginBottom: "16px", padding: "12px 16px", borderRadius: "8px", background: "rgba(249, 115, 22, 0.15)", border: "1px solid rgba(249, 115, 22, 0.3)", fontSize: "0.9rem" }}>
             ✅ <strong>Align mode:</strong> วางบทพูดที่ถูกต้อง + ไฟล์เสียง → ระบบจะจับ timestamp ให้ตรงกับเสียง (ข้อความจะตรงกับ script ไม่มีคำผิด)
           </div>
         )}
@@ -457,8 +457,8 @@ export default function TranscribePage() {
             marginTop: "16px",
             padding: "16px 20px",
             borderRadius: "10px",
-            background: "rgba(99, 102, 241, 0.1)",
-            border: "1px solid rgba(99, 102, 241, 0.25)",
+            background: "rgba(249, 115, 22, 0.1)",
+            border: "1px solid rgba(249, 115, 22, 0.25)",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "0.88rem" }}>
               <span style={{ color: "var(--text-secondary)" }}>🎬 แปลงวิดีโอ → MP3</span>
@@ -498,8 +498,8 @@ export default function TranscribePage() {
             marginTop: "16px",
             padding: "20px",
             borderRadius: "12px",
-            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.08))",
-            border: "1px solid rgba(99, 102, 241, 0.2)",
+            background: "linear-gradient(135deg, rgba(249, 115, 22, 0.08), rgba(251, 146, 60, 0.08))",
+            border: "1px solid rgba(249, 115, 22, 0.2)",
           }}>
             <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "12px", color: "var(--text-primary)" }}>
               📥 ดาวน์โหลดผลลัพธ์
@@ -553,7 +553,7 @@ export default function TranscribePage() {
                     padding: "10px 14px",
                     borderRadius: "8px",
                     border: `1px solid ${assMode === m.value ? "var(--accent)" : "var(--border)"}`,
-                    background: assMode === m.value ? "rgba(99, 102, 241, 0.1)" : "var(--surface)",
+                    background: assMode === m.value ? "rgba(249, 115, 22, 0.1)" : "var(--surface)",
                     cursor: "pointer",
                     transition: "all 0.2s",
                   }}
@@ -606,7 +606,7 @@ export default function TranscribePage() {
               padding: "16px",
               borderRadius: "10px",
               border: `1px dashed ${jsonFile ? "var(--accent)" : "var(--border)"}`,
-              background: jsonFile ? "rgba(99, 102, 241, 0.05)" : "var(--surface)",
+              background: jsonFile ? "rgba(249, 115, 22, 0.05)" : "var(--surface)",
               marginBottom: "12px",
               transition: "all 0.2s",
             }}>

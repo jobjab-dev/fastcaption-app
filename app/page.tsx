@@ -71,8 +71,8 @@ export default function HomePage() {
           display: "inline-block",
           padding: "6px 16px",
           borderRadius: "99px",
-          background: "rgba(124, 58, 237, 0.15)",
-          border: "1px solid rgba(167, 139, 250, 0.3)",
+          background: "rgba(249, 115, 22, 0.15)",
+          border: "1px solid rgba(249, 115, 22, 0.3)",
           fontSize: "0.85rem",
           color: "var(--accent-light)",
           fontWeight: 600,
@@ -94,7 +94,7 @@ export default function HomePage() {
         }}>
           {t("home.title1")}<br />
           <span style={{
-            background: "linear-gradient(135deg, #a78bfa, #60a5fa)",
+            background: "linear-gradient(135deg, #f97316, #1e3a5f)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
           }}>

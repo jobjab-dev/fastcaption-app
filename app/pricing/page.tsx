@@ -324,7 +324,7 @@ function CryptoSelector({
                           gap: "12px",
                           padding: "10px 20px",
                           border: "none",
-                          background: selectedCoin === c.id ? "rgba(124, 58, 237, 0.12)" : "transparent",
+                          background: selectedCoin === c.id ? "rgba(249, 115, 22, 0.12)" : "transparent",
                           cursor: "pointer",
                           color: "var(--text-primary)",
                           fontSize: "0.9rem",
@@ -334,7 +334,7 @@ function CryptoSelector({
                           if (selectedCoin !== c.id) e.currentTarget.style.background = "rgba(255,255,255,0.05)";
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = selectedCoin === c.id ? "rgba(124, 58, 237, 0.12)" : "transparent";
+                          e.currentTarget.style.background = selectedCoin === c.id ? "rgba(249, 115, 22, 0.12)" : "transparent";
                         }}
                       >
                         <Image
@@ -518,7 +518,7 @@ function ThaiPaymentSelector({
                     gap: "14px",
                     padding: "12px 20px",
                     border: "none",
-                    background: selectedMethod === m.id ? "rgba(124, 58, 237, 0.12)" : "transparent",
+                    background: selectedMethod === m.id ? "rgba(249, 115, 22, 0.12)" : "transparent",
                     cursor: "pointer",
                     color: "var(--text-primary)",
                     fontSize: "0.95rem",
@@ -528,7 +528,7 @@ function ThaiPaymentSelector({
                     if (selectedMethod !== m.id) e.currentTarget.style.background = "rgba(255,255,255,0.05)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = selectedMethod === m.id ? "rgba(124, 58, 237, 0.12)" : "transparent";
+                    e.currentTarget.style.background = selectedMethod === m.id ? "rgba(249, 115, 22, 0.12)" : "transparent";
                   }}
                 >
                   <div style={{

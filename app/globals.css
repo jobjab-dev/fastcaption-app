@@ -12,9 +12,9 @@
   --text-secondary: rgba(240, 240, 255, 0.6);
   --text-muted: rgba(240, 240, 255, 0.35);
 
-  --accent: #7c3aed;
-  --accent-light: #a78bfa;
-  --accent-2: #3b82f6;
+  --accent: #f97316;
+  --accent-light: #fb923c;
+  --accent-2: #1e3a5f;
 
   --success: #34d399;
   --error: #f87171;
@@ -121,11 +121,11 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
 .btn-primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff;
-  box-shadow: 0 0 0 0 rgba(124, 58, 237, 0);
+  box-shadow: 0 0 0 0 rgba(249, 115, 22, 0);
 }
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+  box-shadow: 0 4px 20px rgba(249, 115, 22, 0.4);
 }
 .btn-primary:active:not(:disabled) {
   transform: translateY(0);
@@ -192,7 +192,7 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
 .upload-zone:hover,
 .upload-zone.drag-over {
   border-color: var(--accent-light);
-  background: rgba(124, 58, 237, 0.05);
+  background: rgba(249, 115, 22, 0.05);
 }
 .upload-zone .icon { font-size: 2.5rem; display: block; margin-bottom: 12px; }
 .upload-zone .title { font-weight: 600; font-size: 1rem; margin-bottom: 4px; }
@@ -208,7 +208,7 @@ h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
 .alert-success { background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.3); color: var(--success); }
 .alert-error   { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); color: var(--error); }
 .alert-warning { background: rgba(251, 191, 36, 0.1);  border: 1px solid rgba(251, 191, 36, 0.3);  color: var(--warning); }
-.alert-info    { background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.3);  color: var(--accent-light); }
+.alert-info    { background: rgba(249, 115, 22, 0.12); border: 1px solid rgba(249, 115, 22, 0.3);  color: var(--accent-light); }
 
 /* ── Spinner ── */
 .spinner {
@@ -391,7 +391,7 @@ tbody tr:hover { background: rgba(255,255,255,0.02); }
 }
 .pricing-card.popular {
   border-color: var(--accent);
-  box-shadow: 0 0 32px rgba(124, 58, 237, 0.25);
+  box-shadow: 0 0 32px rgba(249, 115, 22, 0.25);
 }
 
 .popular-badge {
