@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Navbar } from "./components/Navbar";
 import { Providers } from "./components/Providers";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
   title: "FastCaption — AI Subtitle Generator | Try Free",
@@ -91,6 +93,8 @@ export default function RootLayout({
           <Navbar />
           {children}
         </Providers>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
