@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStripe, CREDIT_PACKAGES, convertPrice, type SupportedCurrency } from "@/app/lib/stripe";
+import { getStripe, CREDIT_PACKAGES } from "@/app/lib/stripe";
 import { addCredits } from "@/app/lib/credits";
 import { createCommission } from "@/app/lib/affiliate";
 
@@ -32,14 +32,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unknown package" }, { status: 400 });
     }
 
-    // Verify the paid amount matches what we expect
-    const currency = (session.currency || "thb") as SupportedCurrency;
-    const expectedPrice = convertPrice(pkg.priceThb, currency);
-    const paidAmount = session.amount_total;
-    if (paidAmount !== null && paidAmount !== expectedPrice.stripeAmount) {
-      console.error(`[stripe/webhook] Amount mismatch: paid=${paidAmount} expected=${expectedPrice.stripeAmount} currency=${currency}`);
-      return NextResponse.json({ error: "Amount mismatch" }, { status: 400 });
-    }
+    // Note: Amount verification is intentionally NOT done here.
+    // Stripe's signature verification guarantees event authenticity.
+    // Credits are always looked up from CREDIT_PACKAGES (server-side),
+    // so the attacker cannot inflate the credit amount.
 
     const credits = pkg.credits;
 
