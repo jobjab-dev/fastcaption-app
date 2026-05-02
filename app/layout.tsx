@@ -81,7 +81,7 @@ export const metadata: Metadata = {
     canonical: "https://fastcaption.app",
   },
   other: {
-    "google-site-verification": "",
+    "google-site-verification": "google156f2901e46f7a4e",
     "msapplication-TileColor": "#0a0a0a",
   },
 };
