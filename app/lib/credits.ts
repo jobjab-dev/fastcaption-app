@@ -65,7 +65,8 @@ export async function deductCredits(
 
 /** Add credits to user account (e.g., after purchase).
  *  If stripeId is provided, this is idempotent — duplicate calls with the
- *  same stripeId will be silently skipped (prevents webhook retry exploits). */
+ *  same stripeId will be rejected by the database unique constraint
+ *  (prevents webhook retry exploits and race conditions). */
 export async function addCredits(
   userId: string,
   credits: number,
@@ -73,34 +74,36 @@ export async function addCredits(
   description: string,
   stripeId?: string
 ): Promise<{ added: boolean }> {
-  // Idempotency guard: if a payment reference is provided, check for duplicates
-  if (stripeId) {
-    const existing = await prisma.transaction.findFirst({
-      where: { stripeId },
-    });
-    if (existing) {
+  try {
+    // Atomic: update balance + create transaction record in one go.
+    // If stripeId is a duplicate, the unique constraint on Transaction.stripeId
+    // will throw P2002, preventing double-credit from concurrent webhook retries.
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { credits: { increment: credits } },
+      }),
+      prisma.transaction.create({
+        data: {
+          userId,
+          type,
+          credits,
+          description,
+          stripeId,
+        },
+      }),
+    ]);
+
+    return { added: true };
+  } catch (err: unknown) {
+    const prismaErr = err as { code?: string };
+    if (prismaErr.code === "P2002") {
+      // Duplicate stripeId — payment already processed (webhook retry)
       console.log(`[credits] Duplicate payment skipped: ${stripeId}`);
       return { added: false };
     }
+    throw err; // Re-throw unexpected errors
   }
-
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: userId },
-      data: { credits: { increment: credits } },
-    }),
-    prisma.transaction.create({
-      data: {
-        userId,
-        type,
-        credits,
-        description,
-        stripeId,
-      },
-    }),
-  ]);
-
-  return { added: true };
 }
 
 /** Give signup bonus (5000 credits) */

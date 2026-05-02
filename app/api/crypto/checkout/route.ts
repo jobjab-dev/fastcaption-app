@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const result = await createCryptoInvoice({
       priceAmount: priceUsd,
       payCurrency: coin as SupportedCoin,
-      orderId: `${user.id}_${pkg.id}_${Date.now()}`,
+      orderId: `${user.id}::${pkg.id}::${Date.now()}`,
       orderDescription: `FastCaption ${pkg.name} — ${pkg.credits.toLocaleString()} credits`,
       successUrl: `${origin}/dashboard?payment=success&credits=${pkg.credits}`,
       cancelUrl: `${origin}/pricing?payment=cancelled`,

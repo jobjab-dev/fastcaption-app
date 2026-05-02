@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
 
     // Only process finished payments
     if (body.payment_status === "finished" || body.payment_status === "confirmed") {
-      const orderId = body.order_id as string; // format: userId_packageId_timestamp
-      const parts = orderId.split("_");
+      const orderId = body.order_id as string; // format: userId::packageId::timestamp
+      const parts = orderId.split("::");
       
       if (parts.length >= 3) {
         const userId = parts[0];

@@ -57,7 +57,7 @@ model Transaction {
   type        String   // signup_bonus, purchase, usage, affiliate_commission
   credits     Int      // positive = add, negative = deduct
   description String
-  stripeId    String?  // Payment reference (Stripe/Omise/NOWPayments ID)
+  stripeId    String?  @unique // Payment reference (Stripe/Omise/NOWPayments ID) — unique prevents double-credit
   gateway     String?  // stripe, omise, nowpayments
   createdAt   DateTime @default(now())
 }

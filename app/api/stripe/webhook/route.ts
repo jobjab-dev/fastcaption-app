@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStripe } from "@/app/lib/stripe";
+import { getStripe, CREDIT_PACKAGES, convertPrice, type SupportedCurrency } from "@/app/lib/stripe";
 import { addCredits } from "@/app/lib/credits";
 import { createCommission } from "@/app/lib/affiliate";
 
@@ -22,9 +22,26 @@ export async function POST(request: NextRequest) {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const userId = session.metadata?.userId;
-    const credits = parseInt(session.metadata?.credits || "0");
     const packageId = session.metadata?.packageId || "unknown";
-    const priceThb = parseFloat(session.metadata?.priceThb || "0");
+
+    // ── CRITICAL: Look up credits from server-side package list ──
+    // Do NOT trust metadata.credits — attacker could set any value.
+    const pkg = CREDIT_PACKAGES.find((p) => p.id === packageId);
+    if (!pkg) {
+      console.error(`[stripe/webhook] Unknown packageId: ${packageId}`);
+      return NextResponse.json({ error: "Unknown package" }, { status: 400 });
+    }
+
+    // Verify the paid amount matches what we expect
+    const currency = (session.currency || "thb") as SupportedCurrency;
+    const expectedPrice = convertPrice(pkg.priceThb, currency);
+    const paidAmount = session.amount_total;
+    if (paidAmount !== null && paidAmount !== expectedPrice.stripeAmount) {
+      console.error(`[stripe/webhook] Amount mismatch: paid=${paidAmount} expected=${expectedPrice.stripeAmount} currency=${currency}`);
+      return NextResponse.json({ error: "Amount mismatch" }, { status: 400 });
+    }
+
+    const credits = pkg.credits;
 
     if (userId && credits > 0) {
       const txDescription = `Purchased ${packageId}: ${credits.toLocaleString()} credits`;

@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     } else {
       // Refund credits on failure
       const { addCredits } = await import("@/app/lib/credits");
-      await addCredits(user.id, creditsNeeded, "usage", `Refund: ${file.name} (failed)`);
+      await addCredits(user.id, creditsNeeded, "refund", `Refund: ${file.name} (failed)`);
       await prisma.job.update({
         where: { id: job.id },
         data: {

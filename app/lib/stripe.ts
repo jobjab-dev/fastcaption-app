@@ -53,7 +53,7 @@ const SURCHARGE = 0.05; // 5%
 // Approximate THB → foreign exchange rates (update periodically)
 // 1 THB ≈ X foreign currency
 const EXCHANGE_RATES: Record<string, { rate: number; symbol: string; decimals: number }> = {
-  thb: { rate: 1, symbol: "฿", decimals: 0 },
+  thb: { rate: 1, symbol: "฿", decimals: 2 },
   usd: { rate: 0.029, symbol: "$", decimals: 2 },
   eur: { rate: 0.026, symbol: "€", decimals: 2 },
   gbp: { rate: 0.023, symbol: "£", decimals: 2 },
@@ -99,14 +99,24 @@ export function convertPrice(priceThb: number, currency: SupportedCurrency) {
   const rawPrice = priceThb * info.rate * surcharge;
 
   // Stripe smallest unit: satang for THB, cents for USD/EUR, yen for JPY
+  // THB and other 2-decimal currencies → multiply by 100
+  // Zero-decimal currencies (JPY, KRW, VND, IDR) → use raw value
   const stripeAmount = info.decimals === 0
     ? Math.ceil(rawPrice)
     : Math.ceil(rawPrice * 100);
 
   // Display price (human readable)
-  const displayPrice = info.decimals === 0
-    ? Math.ceil(rawPrice).toLocaleString()
-    : rawPrice.toFixed(2);
+  // THB: show as integer (฿99 not ฿99.00)
+  // Other 2-decimal: show 2 decimals ($2.99)
+  // Zero-decimal: show integer (¥430)
+  let displayPrice: string;
+  if (isTHB) {
+    displayPrice = Math.ceil(rawPrice).toLocaleString();
+  } else if (info.decimals === 0) {
+    displayPrice = Math.ceil(rawPrice).toLocaleString();
+  } else {
+    displayPrice = rawPrice.toFixed(2);
+  }
 
   return {
     currency,
