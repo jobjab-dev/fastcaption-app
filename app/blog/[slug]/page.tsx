@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 interface BlogPost {
@@ -223,6 +224,9 @@ export default async function BlogPostPage({ params }: { params: Params }) {
 
   if (!post) notFound();
 
+  const cookieStore = await cookies();
+  const isThai = cookieStore.get("fastcaption-locale")?.value === "th";
+
   return (
     <>
       <section className="tool-hero" style={{ paddingBottom: 20 }}>
@@ -231,7 +235,7 @@ export default async function BlogPostPage({ params }: { params: Params }) {
             href="/blog"
             style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: 20, display: "inline-block" }}
           >
-            ← Back to Blog
+            {isThai ? "← กลับไปบล็อก" : "← Back to Blog"}
           </Link>
           <h1 className="tool-hero-title">{post.title}</h1>
           <div style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginTop: 8 }}>
@@ -248,12 +252,20 @@ export default async function BlogPostPage({ params }: { params: Params }) {
           <div style={{ maxWidth: 700, margin: "48px auto 0" }}>
             <div className="cta-banner" style={{ padding: "36px 28px" }}>
               <h2 className="section-title" style={{ fontSize: "1.4rem" }}>
-                Try FastCaption <span className="hero-gradient">Free</span>
+                {isThai ? (
+                  <>ลองใช้ FastCaption <span className="hero-gradient">ฟรี</span></>
+                ) : (
+                  <>Try FastCaption <span className="hero-gradient">Free</span></>
+                )}
               </h2>
               <p style={{ fontSize: "0.95rem" }}>
-                5,000 free credits. No credit card needed. ถูกที่สุดในไทย — เริ่ม ฿99!
+                {isThai
+                  ? "5,000 เครดิตฟรี ไม่ต้องผูกบัตร เริ่มต้น ฿99!"
+                  : "5,000 free credits. No credit card needed. Starting from $2.99!"}
               </p>
-              <Link href="/login" className="btn btn-primary btn-lg">🚀 Start Free →</Link>
+              <Link href="/login" className="btn btn-primary btn-lg">
+                {isThai ? "🚀 เริ่มใช้ฟรี →" : "🚀 Start Free →"}
+              </Link>
             </div>
           </div>
         </div>
