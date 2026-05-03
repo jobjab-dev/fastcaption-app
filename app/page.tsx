@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useLocale } from "./components/LocaleProvider";
 import { OutputCarousel } from "./components/OutputCarousel";
+import { FAQAccordion } from "./components/FAQAccordion";
 
 /* Minimal SVG icons */
 const icons = {
@@ -43,8 +44,16 @@ const icons = {
   ),
 };
 
+const FAQ_COUNT = 12;
+
 export default function HomePage() {
   const { t } = useLocale();
+
+  // Build FAQ items dynamically from i18n
+  const faqItems = Array.from({ length: FAQ_COUNT }, (_, i) => ({
+    q: t(`faq.${i + 1}.q`),
+    a: t(`faq.${i + 1}.a`),
+  }));
 
   const features = [
     { icon: icons.mic, title: t("home.feat1.title"), desc: t("home.feat1.desc") },
@@ -88,11 +97,27 @@ export default function HomePage() {
           fontSize: "1rem",
           color: "var(--text-secondary)",
           maxWidth: "480px",
-          margin: "0 auto 36px",
+          margin: "0 auto 24px",
           lineHeight: 1.7,
         }}>
           {t("home.desc")}
         </p>
+
+        {/* Trust badges */}
+        <div style={{
+          display: "flex",
+          gap: "16px",
+          justifyContent: "center",
+          flexWrap: "wrap",
+          marginBottom: "28px",
+          fontSize: "0.82rem",
+          color: "var(--text-muted)",
+        }}>
+          <span>✓ <strong style={{ color: "var(--success)" }}>{t("home.trust.free")}</strong></span>
+          <span>✓ {t("home.trust.noCard")}</span>
+          <span>✓ <strong style={{ color: "var(--accent-light)" }}>{t("home.trust.cheap")}</strong></span>
+          <span>✓ {t("home.trust.noSub")}</span>
+        </div>
 
         <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
           <Link href="/login" className="btn btn-primary btn-lg">
@@ -147,20 +172,49 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Divider */}
+      <div className="container"><div className="divider" /></div>
+
+      {/* FAQ Section */}
+      <section className="container" style={{ paddingBottom: "60px" }} aria-label="FAQ" id="faq">
+        <div style={{ textAlign: "center", marginBottom: "40px" }}>
+          <p style={{
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "2px",
+            color: "var(--text-muted)",
+            marginBottom: "12px",
+          }}>
+            {t("home.faq.label")}
+          </p>
+          <h2 style={{
+            fontFamily: "var(--font-heading, inherit)",
+            fontSize: "clamp(1.5rem, 3vw, 2.2rem)",
+            fontWeight: 800,
+            letterSpacing: "-0.5px",
+            marginBottom: "8px",
+          }}>
+            {t("home.faq.title")}
+          </h2>
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
+            {t("home.faq.subtitle")}
+          </p>
+        </div>
+        <FAQAccordion items={faqItems} />
+      </section>
+
       {/* CTA */}
       <section className="container" style={{ paddingBottom: "60px" }} aria-label="Call to action">
-        <div style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-lg)",
-          padding: "48px 32px",
-          textAlign: "center",
-        }}>
-          <h2 style={{ fontSize: "1.5rem", marginBottom: "10px", fontWeight: 700 }}>
+        <div className="cta-banner">
+          <h2 className="section-title">
             {t("home.bonus.title", { credits: "5,000" })}
           </h2>
-          <p style={{ color: "var(--text-secondary)", marginBottom: "24px", fontSize: "0.95rem" }}>
+          <p style={{ color: "var(--text-secondary)", marginBottom: "12px", fontSize: "0.95rem" }}>
             {t("home.bonus.desc")}
+          </p>
+          <p style={{ color: "var(--text-muted)", marginBottom: "24px", fontSize: "0.88rem" }}>
+            {t("home.bonus.extra")}
           </p>
           <Link href="/login" className="btn btn-primary btn-lg">
             {t("home.bonus.cta")}

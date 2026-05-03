@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/app/lib/auth-helpers";
-import { CREDIT_PACKAGES, convertPrice } from "@/app/lib/stripe";
+import { CREDIT_PACKAGES } from "@/app/lib/stripe";
 import { createCryptoInvoice, type SupportedCoin } from "@/app/lib/nowpayments";
 
 /**
@@ -22,9 +22,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid package" }, { status: 400 });
     }
 
-    // Convert THB price to USD for crypto pricing
-    const usdPrice = convertPrice(pkg.priceThb, "usd");
-    const priceUsd = usdPrice.stripeAmount / 100; // Convert from cents to dollars
+    // Use fixed USD price for crypto
+    const priceUsd = pkg.priceUsd;
 
     const origin = request.headers.get("origin") || "https://fastcaption.app";
 

@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
 
     // Determine currency
     const currency = requestedCurrency || detectCurrency(request.headers.get("accept-language"));
-    const price = convertPrice(pkg.priceThb, currency);
+    const price = convertPrice(pkg, currency);
     const paymentMethods = getPaymentMethods(currency);
 
     // Create Stripe Checkout Session

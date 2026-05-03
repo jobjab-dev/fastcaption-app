@@ -15,6 +15,7 @@ interface PricingPackage {
   displayPrice: string;
   surchargePercent: number;
   isTHB: boolean;
+  cryptoPriceUsd: string;
 }
 
 type PaymentTab = "card" | "thai" | "crypto";
@@ -712,15 +713,22 @@ export default function PricingPage() {
             </p>
           )}
           {activeTab === "thai" && (
-            <>
-              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "16px" }}>
-                {t("price.selectMethod")}
+            <div style={{
+              textAlign: "center",
+              padding: "40px 20px",
+              maxWidth: "420px",
+              margin: "0 auto",
+            }}>
+              <div style={{ fontSize: "2.5rem", marginBottom: "16px" }}>🔧</div>
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "8px" }}>
+                {isThai ? "อยู่ระหว่างปรับปรุง" : "Under Maintenance"}
+              </h3>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: 1.6 }}>
+                {isThai
+                  ? "ช่องทาง Thai Banking กำลังอยู่ระหว่างการตรวจสอบ กรุณาใช้ช่องทาง Card / Wallet หรือ Crypto แทนชั่วคราว"
+                  : "Thai Banking is currently under review. Please use Card / Wallet or Crypto in the meantime."}
               </p>
-              <ThaiPaymentSelector
-                selectedMethod={selectedThaiMethod}
-                onSelect={setSelectedThaiMethod}
-              />
-            </>
+            </div>
           )}
           {activeTab === "crypto" && (
             <>

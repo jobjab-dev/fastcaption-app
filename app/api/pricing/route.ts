@@ -17,9 +17,9 @@ export async function GET(request: NextRequest) {
     : detectCurrency(request.headers.get("accept-language"));
 
   const packages = CREDIT_PACKAGES.map((pkg) => {
-    const price = convertPrice(pkg.priceThb, currency);
+    const price = convertPrice(pkg, currency);
     // Crypto always shows in USD — same price as card/USD (with surcharge)
-    const usdPrice = convertPrice(pkg.priceThb, "usd");
+    const usdPrice = convertPrice(pkg, "usd");
     return {
       id: pkg.id,
       name: pkg.name,
