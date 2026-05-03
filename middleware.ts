@@ -31,6 +31,6 @@ export const config = {
      * - public files (images, etc.)
      * - API webhooks (no auth needed)
      */
-    "/((?!_next/static|_next/image|favicon.ico|auth/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|api/webhooks|api/stripe/webhook|api/omise/webhook|api/crypto/webhook).*)",
+    "/((?!_next/static|_next/image|favicon.ico|auth/callback|api/auth/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|api/webhooks|api/stripe/webhook|api/omise/webhook|api/crypto/webhook).*)",
   ],
 };
