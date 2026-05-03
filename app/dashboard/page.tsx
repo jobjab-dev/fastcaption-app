@@ -23,47 +23,34 @@ export default async function DashboardPage() {
   const t = createT(locale);
   const dateLocale = locale === "th" ? "th-TH" : "en-US";
 
-  const [credits, recentJobs] = await Promise.all([
+  // Run ALL DB queries in parallel for speed
+  const [credits, recentJobs, recentTransactions, totalJobs, totalCreditsUsedResult] = await Promise.all([
     getUserCredits(user.id),
     prisma.job.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
-  ]);
-
-  // Fetch transactions — handle gracefully if gateway column doesn't exist yet
-  let recentTransactions: { id: string; type: string; credits: number; description: string; createdAt: Date }[] = [];
-  try {
-    recentTransactions = await prisma.transaction.findMany({
+    prisma.transaction.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 10,
       select: { id: true, type: true, credits: true, description: true, createdAt: true },
-    });
-  } catch {
-    // gateway column may not exist yet — fall back to raw query
-    try {
-      recentTransactions = await prisma.$queryRawUnsafe(
+    }).catch(() =>
+      // gateway column may not exist yet — fall back to raw query
+      prisma.$queryRawUnsafe<{ id: string; type: string; credits: number; description: string; createdAt: Date }[]>(
         `SELECT id, type, credits, description, "createdAt" FROM "Transaction" WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT 10`,
         user.id
-      );
-    } catch {
-      recentTransactions = [];
-    }
-  }
-
-  const totalJobs = await prisma.job.count({ where: { userId: user.id } });
-  let totalCreditsUsed = 0;
-  try {
-    const agg = await prisma.transaction.aggregate({
+      ).catch(() => [] as { id: string; type: string; credits: number; description: string; createdAt: Date }[])
+    ),
+    prisma.job.count({ where: { userId: user.id } }),
+    prisma.transaction.aggregate({
       where: { userId: user.id, type: "usage" },
       _sum: { credits: true },
-    });
-    totalCreditsUsed = Math.abs(agg._sum.credits || 0);
-  } catch {
-    totalCreditsUsed = 0;
-  }
+    }).catch(() => ({ _sum: { credits: 0 } })),
+  ]);
+
+  const totalCreditsUsed = Math.abs(totalCreditsUsedResult._sum.credits || 0);
 
   // Format credits to minutes
   const creditsMin = creditsToMinutes(credits);
