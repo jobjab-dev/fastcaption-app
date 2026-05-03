@@ -1,7 +1,17 @@
-import { type NextRequest } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/app/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
+  // ── Catch OAuth code landing on wrong page ──
+  // If ?code= arrives at root (or any non-callback page), redirect to the auth callback
+  const code = request.nextUrl.searchParams.get("code");
+  const pathname = request.nextUrl.pathname;
+  if (code && pathname === "/") {
+    const callbackUrl = new URL("/api/auth/callback", request.url);
+    callbackUrl.searchParams.set("code", code);
+    return NextResponse.redirect(callbackUrl);
+  }
+
   const response = await updateSession(request);
 
   // ── Geo-based locale detection (Vercel provides x-vercel-ip-country) ──
