@@ -18,8 +18,7 @@ export async function GET(request: NextRequest) {
 
   const packages = CREDIT_PACKAGES.map((pkg) => {
     const price = convertPrice(pkg, currency);
-    // Crypto always shows in USD — same price as card/USD (with surcharge)
-    const usdPrice = convertPrice(pkg, "usd");
+    const isTHB = currency === "thb";
     return {
       id: pkg.id,
       name: pkg.name,
@@ -31,7 +30,13 @@ export async function GET(request: NextRequest) {
       displayPrice: price.displayPrice,
       surchargePercent: price.surchargePercent,
       isTHB: price.isTHB,
-      cryptoPriceUsd: usdPrice.displayPrice,
+      cryptoPriceUsd: pkg.discountUsd.toFixed(2),
+      // Discount prices for Crypto / Thai Banking
+      discountPrice: isTHB
+        ? pkg.discountThb.toLocaleString()
+        : pkg.discountUsd.toFixed(2),
+      discountLabel: pkg.discountLabel,
+      originalPrice: price.displayPrice,
     };
   });
 

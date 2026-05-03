@@ -21,6 +21,10 @@ export const CREDIT_PACKAGES = [
     credits: 10000,
     priceThb: 99,
     priceUsd: 2.99,
+    // Crypto / Omise discount (10% off)
+    discountThb: 89,
+    discountUsd: 2.69,
+    discountLabel: "10%",
     description: "≈ 50 min",
     descTh: "≈ 50 นาที",
     popular: false,
@@ -31,6 +35,10 @@ export const CREDIT_PACKAGES = [
     credits: 50000,
     priceThb: 399,
     priceUsd: 9.99,
+    // Crypto / Omise discount (10% off)
+    discountThb: 359,
+    discountUsd: 8.99,
+    discountLabel: "10%",
     description: "≈ 4 hrs",
     descTh: "≈ 4 ชั่วโมง",
     popular: true,
@@ -41,6 +49,10 @@ export const CREDIT_PACKAGES = [
     credits: 200000,
     priceThb: 1299,
     priceUsd: 29.99,
+    // Crypto / Omise discount (10% off)
+    discountThb: 1169,
+    discountUsd: 26.99,
+    discountLabel: "10%",
     description: "≈ 16 hrs",
     descTh: "≈ 16 ชั่วโมง",
     popular: false,

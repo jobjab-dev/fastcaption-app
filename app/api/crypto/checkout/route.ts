@@ -22,8 +22,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid package" }, { status: 400 });
     }
 
-    // Use fixed USD price for crypto
-    const priceUsd = pkg.priceUsd;
+    // Use discounted USD price for crypto
+    const priceUsd = pkg.discountUsd;
 
     const origin = request.headers.get("origin") || "https://fastcaption.app";
 

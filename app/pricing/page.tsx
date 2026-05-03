@@ -16,6 +16,9 @@ interface PricingPackage {
   surchargePercent: number;
   isTHB: boolean;
   cryptoPriceUsd: string;
+  discountPrice: string;
+  discountLabel: string;
+  originalPrice: string;
 }
 
 type PaymentTab = "card" | "thai" | "crypto";
@@ -794,6 +797,17 @@ export default function PricingPage() {
                       <>
                         <span className="currency">$</span>
                         {pkg.cryptoPriceUsd}
+                        <span style={{ fontSize: "0.55em", color: "var(--text-muted)", textDecoration: "line-through", marginLeft: "8px" }}>
+                          ${pkg.originalPrice !== pkg.discountPrice ? (pkg.isTHB ? pkg.displayPrice : pkg.displayPrice) : ""}
+                        </span>
+                      </>
+                    ) : activeTab === "thai" ? (
+                      <>
+                        <span className="currency">{pkg.symbol}</span>
+                        {pkg.discountPrice}
+                        <span style={{ fontSize: "0.55em", color: "var(--text-muted)", textDecoration: "line-through", marginLeft: "8px" }}>
+                          {pkg.symbol}{pkg.displayPrice}
+                        </span>
                       </>
                     ) : (
                       <>
@@ -802,6 +816,11 @@ export default function PricingPage() {
                       </>
                     )}
                   </div>
+                  {(activeTab === "crypto" || activeTab === "thai") && (
+                    <div style={{ fontSize: "0.78rem", color: "#22c55e", fontWeight: 600, marginTop: "-4px", marginBottom: "4px" }}>
+                      🏷️ -{pkg.discountLabel}
+                    </div>
+                  )}
                   <div className="description">
                     {pkg.description}
                     {activeTab === "card" && pkg.surchargePercent > 0 && (
