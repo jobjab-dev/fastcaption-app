@@ -1,4 +1,5 @@
-import { getAuthUser } from "@/app/lib/auth-helpers";
+import { getAuthUser, ensureUserExists } from "@/app/lib/auth-helpers";
+import { getSupabaseUser } from "@/app/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { prisma } from "@/app/lib/db";
 import { getUserCredits, creditsToMinutes } from "@/app/lib/credits";
@@ -9,7 +10,15 @@ import { headers, cookies } from "next/headers";
 import { createT, type Locale } from "@/app/lib/i18n";
 
 export default async function DashboardPage() {
-  const user = await getAuthUser();
+  // Step 1: Check Supabase session — no session = truly not logged in
+  const supabaseUser = await getSupabaseUser();
+  if (!supabaseUser) redirect("/login");
+
+  // Step 2: Get DB user — if missing, create it (handles first login race condition)
+  let user = await getAuthUser();
+  if (!user) {
+    user = await ensureUserExists();
+  }
   if (!user) redirect("/login");
 
   // Detect locale from cookie or Accept-Language header
