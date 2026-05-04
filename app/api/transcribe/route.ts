@@ -100,7 +100,6 @@ export async function POST(request: NextRequest) {
         language,
         status: "processing",
         storagePath: finalPath,
-        source: request.headers.get("X-Client-Source") === "mobile-app" ? "app" : "web",
       },
     });
 
