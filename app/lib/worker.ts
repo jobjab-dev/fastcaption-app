@@ -136,7 +136,7 @@ async function runWithFallbackModel(
     audio: audioUrl,
     task: "transcribe",
     timestamp: "word",
-    batch_size: 24,
+    batch_size: 8,
   };
 
   const langMap: Record<string, string> = {
