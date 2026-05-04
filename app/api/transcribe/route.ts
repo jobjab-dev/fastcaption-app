@@ -5,8 +5,7 @@ import { calculateCredits, deductCredits, getUserCredits } from "@/app/lib/credi
 import { estimateAudioDuration, runTranscription, runAlignment } from "@/app/lib/worker";
 import { createSupabaseAdmin } from "@/app/lib/supabase/admin";
 
-// Max file size: 50MB (Vercel payload limit is 4.5MB but we upload to Supabase Storage)
-// For larger files, use client-side direct upload to Supabase Storage
+// Max file size: 50MB
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
@@ -16,26 +15,32 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-    const language = (formData.get("language") as string) || "th";
-    const mode = (formData.get("mode") as string) || "transcribe";
-    const scriptText = (formData.get("scriptText") as string) || "";
+    // Client uploads file directly to Supabase Storage, then sends metadata here
+    const body = await request.json();
+    const { storagePath, fileName, fileSize, fileType, language = "th", mode = "transcribe", scriptText = "" } = body as {
+      storagePath: string;
+      fileName: string;
+      fileSize: number;
+      fileType: string;
+      language?: string;
+      mode?: string;
+      scriptText?: string;
+    };
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!storagePath || !fileName || !fileSize) {
+      return NextResponse.json({ error: "Missing required fields: storagePath, fileName, fileSize" }, { status: 400 });
     }
 
     if (mode === "align" && !scriptText.trim()) {
       return NextResponse.json({ error: "Script text is required for align mode" }, { status: 400 });
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "ไฟล์ใหญ่เกิน 50MB — ใช้ direct upload สำหรับไฟล์ใหญ่" }, { status: 400 });
+    if (fileSize > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: "ไฟล์ใหญ่เกิน 50MB" }, { status: 400 });
     }
 
     // Estimate audio duration from file size
-    const durationSec = estimateAudioDuration(file.size, file.type || "audio/mpeg");
+    const durationSec = estimateAudioDuration(fileSize, fileType || "audio/mpeg");
 
     // Calculate credits needed
     const creditsNeeded = calculateCredits(durationSec);
@@ -51,32 +56,33 @@ export async function POST(request: NextRequest) {
       }, { status: 402 });
     }
 
-    // Upload file to Supabase Storage (using admin client to bypass RLS)
+    // Get Supabase admin client to create signed URL
     const supabase = createSupabaseAdmin();
     if (!supabase) {
       return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
     }
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+    // Move file from client-uploaded path to user-scoped path
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
     const timestamp = Date.now();
-    const storagePath = `${user.id}/${timestamp}_${safeName}`;
+    const userStoragePath = `${user.id}/${timestamp}_${safeName}`;
 
-    const fileBuffer = await file.arrayBuffer();
-    const { error: uploadError } = await supabase.storage
+    const { error: moveError } = await supabase.storage
       .from("audio-uploads")
-      .upload(storagePath, fileBuffer, {
-        contentType: file.type || "audio/mpeg",
-        upsert: false,
-      });
+      .move(storagePath, userStoragePath);
 
-    if (uploadError) {
-      console.error("[transcribe] Upload to Supabase Storage failed:", uploadError);
-      return NextResponse.json({ error: "File upload failed" }, { status: 500 });
+    if (moveError) {
+      console.error("[transcribe] Failed to move file:", moveError);
+      // Try to use the original path if move fails (e.g., RLS issue)
+      // Fall through — we'll use whichever path works for the signed URL
     }
+
+    const finalPath = moveError ? storagePath : userStoragePath;
 
     // Get signed URL for Replicate to access the file
     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from("audio-uploads")
-      .createSignedUrl(storagePath, 3600); // 1 hour expiry
+      .createSignedUrl(finalPath, 3600); // 1 hour expiry
 
     if (signedUrlError || !signedUrlData?.signedUrl) {
       console.error("[transcribe] Failed to create signed URL:", signedUrlError);
@@ -87,23 +93,22 @@ export async function POST(request: NextRequest) {
     const job = await prisma.job.create({
       data: {
         userId: user.id,
-        fileName: file.name,
-        fileSize: file.size,
+        fileName,
+        fileSize,
         durationSec,
         creditsUsed: creditsNeeded,
         language,
         status: "processing",
-        storagePath,
+        storagePath: finalPath,
         source: request.headers.get("X-Client-Source") === "mobile-app" ? "app" : "web",
       },
     });
 
     // Deduct credits
-    const deducted = await deductCredits(user.id, creditsNeeded, job.id, file.name);
+    const deducted = await deductCredits(user.id, creditsNeeded, job.id, fileName);
     if (!deducted) {
       await prisma.job.update({ where: { id: job.id }, data: { status: "failed", errorMessage: "Credit deduction failed" } });
-      // Clean up uploaded file
-      await supabase.storage.from("audio-uploads").remove([storagePath]);
+      await supabase.storage.from("audio-uploads").remove([finalPath]);
       return NextResponse.json({ error: "Credit deduction failed", creditsNeeded, balance }, { status: 402 });
     }
 
@@ -138,7 +143,7 @@ export async function POST(request: NextRequest) {
     } else {
       // Refund credits on failure
       const { addCredits } = await import("@/app/lib/credits");
-      await addCredits(user.id, creditsNeeded, "refund", `Refund: ${file.name} (failed)`);
+      await addCredits(user.id, creditsNeeded, "refund", `Refund: ${fileName} (failed)`);
       await prisma.job.update({
         where: { id: job.id },
         data: {
@@ -150,7 +155,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Clean up uploaded audio from storage
-    await supabase.storage.from("audio-uploads").remove([storagePath]).catch(() => {});
+    await supabase.storage.from("audio-uploads").remove([finalPath]).catch(() => {});
 
     return NextResponse.json({
       jobId: job.id,
@@ -165,3 +170,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+

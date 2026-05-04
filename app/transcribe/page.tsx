@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import { needsConversion, convertToMp3, formatFileSize, type ConvertProgress } from "@/app/lib/ffmpeg-convert";
 import { useLocale } from "@/app/components/LocaleProvider";
+import { createSupabaseBrowserClient } from "@/app/lib/supabase/client";
 
 const LANGUAGES = [
   { code: "th", name: "ไทย" },
@@ -133,22 +134,47 @@ export default function TranscribePage() {
     setMessage(t("tx.uploading"));
     setConvertProgress(null);
 
-    const formData = new FormData();
-    formData.append("file", uploadFile);
-    formData.append("language", language);
-    formData.append("mode", workMode);
-    if (workMode === "align") {
-      formData.append("scriptText", scriptText);
-    }
-
     try {
-      const res = await fetch("/api/transcribe", { method: "POST", body: formData });
+      // Step 1: Upload file directly to Supabase Storage (bypasses Vercel 4.5MB limit)
+      const supabase = createSupabaseBrowserClient();
+      const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const timestamp = Date.now();
+      const storagePath = `uploads/${timestamp}_${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("audio-uploads")
+        .upload(storagePath, uploadFile, {
+          contentType: uploadFile.type || "audio/mpeg",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        setStatus("failed");
+        setMessage(t("tx.errorGeneral", { error: `Upload failed: ${uploadError.message}` }));
+        return;
+      }
+
+      setMessage("⏳ กำลังประมวลผล...");
+
+      // Step 2: Send only metadata to API route (no file in body)
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storagePath,
+          fileName: uploadFile.name,
+          fileSize: uploadFile.size,
+          fileType: uploadFile.type || "audio/mpeg",
+          language,
+          mode: workMode,
+          scriptText: workMode === "align" ? scriptText : undefined,
+        }),
+      });
 
       let data: Record<string, unknown>;
       try {
         data = await res.json();
       } catch {
-        // Response is not valid JSON (e.g. "Request Entity Too Large")
         const text = await res.text().catch(() => `HTTP ${res.status}`);
         setStatus("failed");
         setMessage(t("tx.errorGeneral", { error: text || `HTTP ${res.status}` }));
@@ -180,7 +206,7 @@ export default function TranscribePage() {
             clearInterval(pollInterval);
             setStatus("done");
             setMessage(t("tx.success", { cred: data.creditsUsed, bal: data.balanceAfter }));
-            setResult({ jobId, ...data });
+            setResult({ jobId, ...data } as unknown as JobResult);
           } else if (jobData.status === "failed") {
             clearInterval(pollInterval);
             setStatus("failed");
