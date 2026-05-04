@@ -46,6 +46,7 @@ model Job {
   errorMessage  String?
   replicateId   String?   // Replicate prediction ID for webhook matching
   storagePath   String?   // Supabase Storage path for uploaded audio
+  source        String    @default("web")  // "web" | "app"
   createdAt     DateTime  @default(now())
   completedAt   DateTime?
 }
@@ -57,8 +58,9 @@ model Transaction {
   type        String   // signup_bonus, purchase, usage, affiliate_commission
   credits     Int      // positive = add, negative = deduct
   description String
-  stripeId    String?  @unique // Payment reference (Stripe/Omise/NOWPayments ID) — unique prevents double-credit
-  gateway     String?  // stripe, omise, nowpayments
+  stripeId    String?  @unique // Payment reference (Stripe/Omise/NOWPayments/IAP ID) — unique prevents double-credit
+  gateway     String?  // stripe, omise, nowpayments, apple_iap, google_play, rewarded_ad
+  source      String   @default("web")  // "web" | "app"
   createdAt   DateTime @default(now())
 }
 
@@ -111,4 +113,16 @@ model PayoutRequest {
   processedAt DateTime?
 
   @@index([affiliateId])
+}
+
+// ═══ MOBILE APP — AD REWARD TRACKING ═══
+
+model AdRewardLog {
+  id        String   @id @default(cuid())
+  userId    String
+  credits   Int      @default(300)
+  adUnitId  String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

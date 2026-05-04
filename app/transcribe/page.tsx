@@ -143,12 +143,22 @@ export default function TranscribePage() {
 
     try {
       const res = await fetch("/api/transcribe", { method: "POST", body: formData });
-      const data = await res.json();
+
+      let data: Record<string, unknown>;
+      try {
+        data = await res.json();
+      } catch {
+        // Response is not valid JSON (e.g. "Request Entity Too Large")
+        const text = await res.text().catch(() => `HTTP ${res.status}`);
+        setStatus("failed");
+        setMessage(t("tx.errorGeneral", { error: text || `HTTP ${res.status}` }));
+        return;
+      }
 
       if (!res.ok) {
         setStatus("failed");
         if (res.status === 402) {
-          setMessage(t("tx.creditsLow", { needed: data.creditsNeeded?.toLocaleString() || "?", balance: data.balance?.toLocaleString() || "?" }));
+          setMessage(t("tx.creditsLow", { needed: (data.creditsNeeded as number)?.toLocaleString() || "?", balance: (data.balance as number)?.toLocaleString() || "?" }));
         } else {
           setMessage(t("tx.errorGeneral", { error: data.error }));
         }
