@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(result.content, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${fileName}.ass"`,
+        "Content-Disposition": `attachment; filename="subtitle.ass"; filename*=UTF-8''${encodeURIComponent(fileName)}.ass`,
       },
     });
   } catch (error) {
