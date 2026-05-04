@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
         language,
         status: "processing",
         storagePath: finalPath,
+        source: "web",
       },
     });
 
