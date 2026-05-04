@@ -1,4 +1,5 @@
 import Replicate from "replicate";
+import { generateAssContent } from "./ass-generator";
 
 // Primary: Custom FastCaption Whisper model (faster-whisper large-v3, character-level timestamps)
 // Deploy with: cd replicate-model && cog push r8.im/jobjab-dev/fastcaption-whisper
@@ -612,7 +613,7 @@ export function generateAss(
   }
 ): { success: boolean; content?: string; captions?: number; error?: string } {
   try {
-    const { generateAssContent } = require("./ass-generator");
+    // generateAssContent imported at top of file
     const data = JSON.parse(jsonContent);
 
     const mode = options.mode === "word" ? "word" : options.mode === "smart" ? "smart" : "pause";
