@@ -230,6 +230,7 @@ export async function POST(request: NextRequest) {
       creditsUsed: creditsNeeded,
       durationSec: Math.round(durationSec),
       balanceAfter: balance - creditsNeeded,
+      result: processResult.success ? JSON.parse(processResult.resultJson!) : undefined,
       error: processResult.success ? undefined : processResult.error,
     });
   } catch (error) {
