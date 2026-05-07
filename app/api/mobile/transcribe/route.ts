@@ -26,15 +26,22 @@ export async function POST(request: NextRequest) {
 
   const token = authHeader.replace("Bearer ", "");
 
-  // Verify the JWT using Supabase
+  // Verify the JWT using Supabase admin (service_role can validate any user's JWT)
   const supabaseAuth = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    },
   );
 
   const { data: { user: supabaseUser }, error: authError } = await supabaseAuth.auth.getUser(token);
 
   if (authError || !supabaseUser) {
+    console.error("[mobile/transcribe] Auth failed:", authError?.message || "No user");
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
 
