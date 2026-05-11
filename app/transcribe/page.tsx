@@ -57,6 +57,7 @@ export default function TranscribePage() {
   // ASS options
   const [assMode, setAssMode] = useState<"pause" | "word" | "smart">("pause");
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
+  const [maxChars, setMaxChars] = useState(16);
   const [assGenerating, setAssGenerating] = useState(false);
 
   // Conversion state
@@ -106,7 +107,7 @@ export default function TranscribePage() {
   const handleSubmit = async () => {
     if (!file) return;
     if (workMode === "align" && !scriptText.trim()) {
-      setMessage("❌ กรุณาวางบทพูดก่อน");
+      setMessage(t("tx.noScript"));
       setStatus("failed");
       return;
     }
@@ -118,7 +119,7 @@ export default function TranscribePage() {
     // Convert video → mp3 if needed (client-side)
     let uploadFile = file;
     if (needsConversion(file)) {
-      setMessage(`🎬 กำลังแปลงวิดีโอเป็น MP3... (${formatFileSize(file.size)})`);
+      setMessage(t("tx.convertMsg", { size: formatFileSize(file.size) }));
       try {
         uploadFile = await convertToMp3(file, (p) => {
           setConvertProgress(p);
@@ -154,7 +155,7 @@ export default function TranscribePage() {
         return;
       }
 
-      setMessage("⏳ กำลังประมวลผล...");
+      setMessage(t("tx.processingFile"));
 
       // Step 2: Send only metadata to API route (no file in body)
       const res = await fetch("/api/transcribe", {
@@ -297,6 +298,7 @@ export default function TranscribePage() {
       formData.append("assMode", assMode);
       formData.append("orientation", orientation);
       formData.append("language", language);
+      formData.append("maxChars", String(maxChars));
 
       if (source === "job" && result) {
         formData.append("jobId", result.jobId);
@@ -311,7 +313,7 @@ export default function TranscribePage() {
 
       if (!res.ok) {
         const err = await res.json();
-        setMessage(`❌ สร้าง ASS ล้มเหลว: ${err.error}`);
+        setMessage(t("tx.assError", { error: err.error }));
         return;
       }
 
@@ -326,7 +328,7 @@ export default function TranscribePage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setMessage(`❌ เกิดข้อผิดพลาด: ${err}`);
+      setMessage(t("tx.assDownloadError", { error: String(err) }));
     } finally {
       setAssGenerating(false);
     }
@@ -365,7 +367,7 @@ export default function TranscribePage() {
 
         {workMode === "align" && (
           <div className="alert alert-info" style={{ marginBottom: "16px", padding: "12px 16px", borderRadius: "8px", background: "rgba(249, 115, 22, 0.15)", border: "1px solid rgba(249, 115, 22, 0.3)", fontSize: "0.9rem" }}>
-            ✅ <strong>Align mode:</strong> วางบทพูดที่ถูกต้อง + ไฟล์เสียง → ระบบจะจับ timestamp ให้ตรงกับเสียง (ข้อความจะตรงกับ script ไม่มีคำผิด)
+            ✅ <strong>Align mode:</strong> {t("tx.alignInfo")}
           </div>
         )}
 
@@ -419,7 +421,7 @@ export default function TranscribePage() {
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.3)"; e.currentTarget.style.color = "#f87171"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
-                title="ยกเลิกไฟล์"
+                title={t("tx.cancelFile")}
               >
                 ✕
               </button>
@@ -497,7 +499,7 @@ export default function TranscribePage() {
             border: "1px solid rgba(249, 115, 22, 0.25)",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "0.88rem" }}>
-              <span style={{ color: "var(--text-secondary)" }}>🎬 แปลงวิดีโอ → MP3</span>
+              <span style={{ color: "var(--text-secondary)" }}>{t("tx.convertVideo")}</span>
               <span style={{ color: "var(--accent-light)", fontWeight: 600 }}>{convertProgress.progress}%</span>
             </div>
             <div style={{
@@ -538,7 +540,7 @@ export default function TranscribePage() {
             border: "1px solid rgba(249, 115, 22, 0.2)",
           }}>
             <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "12px", color: "var(--text-primary)" }}>
-              📥 ดาวน์โหลดผลลัพธ์
+              {t("tx.downloadResults")}
             </div>
             <div style={{
               display: "grid",
@@ -549,19 +551,19 @@ export default function TranscribePage() {
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 8px", gap: "4px" }}>
                 <span style={{ fontSize: "1.3rem" }}>📋</span>
                 <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>JSON</span>
-                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>ข้อมูลดิบ + timestamps</span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>{t("tx.jsonDesc")}</span>
               </button>
               <button className="btn btn-secondary" onClick={handleDownloadSrt}
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 8px", gap: "4px" }}>
                 <span style={{ fontSize: "1.3rem" }}>🎬</span>
                 <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>SRT</span>
-                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>ซับไทเทิลมาตรฐาน</span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>{t("tx.srtDesc")}</span>
               </button>
               <button className="btn btn-secondary" onClick={handleDownloadTxt}
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "12px 8px", gap: "4px" }}>
                 <span style={{ fontSize: "1.3rem" }}>📝</span>
                 <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>TXT</span>
-                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>ข้อความล้วน</span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>{t("tx.txtDesc")}</span>
               </button>
             </div>
           </div>
@@ -573,11 +575,11 @@ export default function TranscribePage() {
           paddingTop: "24px",
           borderTop: "1px solid var(--border)",
         }}>
-          <h2 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>✨ สร้าง ASS Subtitle</h2>
+          <h2 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>{t("tx.assTitle")}</h2>
 
           {/* ASS Mode */}
           <div style={{ marginBottom: "16px" }}>
-            <label className="form-label">โหมดซับไทเทิล</label>
+            <label className="form-label">{t("tx.assMode")}</label>
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {ASS_MODES.map((m) => (
                 <label
@@ -613,27 +615,94 @@ export default function TranscribePage() {
 
           {/* Orientation */}
           <div style={{ marginBottom: "16px" }}>
-            <label className="form-label">📐 รูปแบบวิดีโอ</label>
+            <label className="form-label">{t("tx.assOrientation")}</label>
             <div style={{ display: "flex", gap: "8px" }}>
               <button
                 className={`btn ${orientation === "portrait" ? "btn-primary" : "btn-secondary"}`}
-                onClick={() => setOrientation("portrait")}
+                onClick={() => { setOrientation("portrait"); setMaxChars(16); }}
                 style={{ flex: 1 }}
               >
-                📱 แนวตั้ง (Portrait)
+                {t("tx.assPortrait")}
               </button>
               <button
                 className={`btn ${orientation === "landscape" ? "btn-primary" : "btn-secondary"}`}
-                onClick={() => setOrientation("landscape")}
+                onClick={() => { setOrientation("landscape"); setMaxChars(24); }}
                 style={{ flex: 1 }}
               >
-                🖥️ แนวนอน (Landscape)
+                {t("tx.assLandscape")}
               </button>
             </div>
             <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "6px" }}>
-              {orientation === "landscape" ? "แนวนอน — caption ยาวขึ้น 2 เท่า" : "แนวตั้ง — caption สั้นกระชับ"}
+              {orientation === "landscape" ? t("tx.orientLandscapeDesc") : t("tx.orientPortraitDesc")}
             </div>
           </div>
+
+          {/* MaxChars Slider */}
+          {assMode !== "word" && (
+            <div style={{ marginBottom: "16px" }}>
+              <label className="form-label">{t("tx.maxCharsLabel")}</label>
+              <div style={{
+                padding: "14px 16px",
+                borderRadius: "10px",
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{t("tx.maxCharsShort")}</span>
+                  <span style={{
+                    fontSize: "1.1rem",
+                    fontWeight: 600,
+                    color: "var(--accent)",
+                    minWidth: "60px",
+                    textAlign: "center",
+                  }}>
+                    {t("tx.maxCharsUnit", { n: maxChars })}
+                  </span>
+                  <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{t("tx.maxCharsLong")}</span>
+                </div>
+                <input
+                  type="range"
+                  min={10}
+                  max={48}
+                  step={2}
+                  value={maxChars}
+                  onChange={(e) => setMaxChars(Number(e.target.value))}
+                  style={{
+                    width: "100%",
+                    accentColor: "var(--accent)",
+                    cursor: "pointer",
+                  }}
+                />
+                <div style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginTop: "6px",
+                  fontSize: "0.75rem",
+                  color: "var(--text-secondary)",
+                }}>
+                  <span>10</span>
+                  <span>16</span>
+                  <span>24</span>
+                  <span>32</span>
+                  <span>48</span>
+                </div>
+                <div style={{
+                  fontSize: "0.8rem",
+                  color: "var(--text-secondary)",
+                  marginTop: "8px",
+                  lineHeight: 1.4,
+                }}>
+                  {maxChars <= 16
+                    ? t("tx.maxCharsHint16")
+                    : maxChars <= 24
+                    ? t("tx.maxCharsHint24")
+                    : maxChars <= 32
+                    ? t("tx.maxCharsHint32")
+                    : t("tx.maxCharsHint48")}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* JSON Source: auto from job OR upload */}
           {!(status === "done" && result) && (
@@ -647,7 +716,7 @@ export default function TranscribePage() {
               transition: "all 0.2s",
             }}>
               <div style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "10px" }}>
-                📁 อัพโหลด JSON เพื่อแปลงเป็น ASS (ฟรี ไม่ใช้ credits)
+                {t("tx.assFromJson")}
               </div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <button
@@ -655,7 +724,7 @@ export default function TranscribePage() {
                   onClick={() => jsonFileRef.current?.click()}
                   style={{ flex: "0 0 auto" }}
                 >
-                  {jsonFile ? "เปลี่ยนไฟล์" : "เลือกไฟล์ JSON"}
+                  {jsonFile ? t("tx.changeJsonFile") : t("tx.selectJsonFile")}
                 </button>
                 <input
                   ref={jsonFileRef}
@@ -667,7 +736,7 @@ export default function TranscribePage() {
                     if (f) {
                       const ext = f.name.split(".").pop()?.toLowerCase();
                       if (ext !== "json") {
-                        setMessage("❌ เลือกได้เฉพาะไฟล์ .json เท่านั้น");
+                        setMessage(t("tx.jsonOnly"));
                         setStatus("failed");
                       } else {
                         setJsonFile(f);
@@ -706,7 +775,7 @@ export default function TranscribePage() {
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(239,68,68,0.3)"; e.currentTarget.style.color = "#f87171"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
-                  title="ยกเลิกไฟล์"
+                  title={t("tx.cancelFile")}
                 >
                   ✕
                 </button>
@@ -723,8 +792,8 @@ export default function TranscribePage() {
               disabled={assGenerating}
             >
               {assGenerating
-                ? <><span className="spinner" /> กำลังสร้าง ASS...</>
-                : `✨ สร้าง ASS Subtitle${status === "done" && result ? "" : ` — ${jsonFile?.name || ""}`}`
+                ? <><span className="spinner" /> {t("tx.assGeneratingLong")}</>
+                : status === "done" && result ? t("tx.assBtn") : t("tx.assBtnFile", { name: jsonFile?.name || "" })
               }
             </button>
           )}

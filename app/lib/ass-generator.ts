@@ -4,7 +4,10 @@
  * Whisper JSON (word timestamps) → caption boxes → CapCut-friendly .ASS
  * 
  * Replaces Python + pythainlp with native Intl.Segmenter for all languages.
+ * Pause mode now uses Gemini AI to ensure proper sentence boundaries.
  */
+
+import { aiResegment } from "./gemini-segmenter";
 
 // ============ Types ============
 
@@ -247,23 +250,29 @@ export function extractWords(data: WhisperData, lang?: string): ExtractedWord[] 
       continue;
     }
 
-    // Step 0: Detect severely compressed timestamps (>30% zero-dur)
+    // Step 0: Detect if tokens are character-level (Thai/CJK Whisper)
     const segStart = seg.start || 0;
     let segEnd = seg.end || 0;
-    const zeroCount = wordsData.filter(w => (w.end || 0) - (w.start || 0) <= 0.001).length;
-    const totalChars = wordsData.length;
+    const totalTokens = wordsData.length;
+    let totalTokenChars = 0;
+    for (const w of wordsData) totalTokenChars += (w.word || "").length;
+    const avgTokenLen = totalTokens > 0 ? totalTokenChars / totalTokens : 0;
+    const isCharLevel = avgTokenLen < 2;
 
-    if (totalChars > 0 && zeroCount / totalChars > 0.30) {
+    // Step 0b: Detect severely compressed timestamps (>30% zero-dur)
+    const zeroCount = wordsData.filter(w => (w.end || 0) - (w.start || 0) <= 0.001).length;
+
+    if (totalTokens > 0 && zeroCount / totalTokens > 0.30) {
       if (segEnd <= segStart + 0.01) {
-        if (zeroCount === totalChars) continue;
+        if (zeroCount === totalTokens) continue;
         const segIdx = data.segments.indexOf(seg);
         if (segIdx >= 0 && segIdx + 1 < data.segments.length) {
           segEnd = data.segments[segIdx + 1].start || segEnd;
         }
-        if (segEnd <= segStart + 0.01) segEnd = segStart + totalChars * 0.08;
+        if (segEnd <= segStart + 0.01) segEnd = segStart + totalTokens * 0.08;
       }
 
-      const durPerChar = (segEnd - segStart) / totalChars;
+      const durPerChar = (segEnd - segStart) / totalTokens;
       wordsData = wordsData.map((w, ci) => ({
         word: w.word || "",
         start: Math.round((segStart + ci * durPerChar) * 1000) / 1000,
@@ -271,15 +280,150 @@ export function extractWords(data: WhisperData, lang?: string): ExtractedWord[] 
       }));
     }
 
+    // ──── CHARACTER-LEVEL PATH ────
+    // When tokens are character-level (Thai/CJK), use seg.text as the
+    // authoritative text source. seg.text may have been AI-corrected and
+    // contains proper words, while concatenating character tokens often
+    // produces garbled text that Intl.Segmenter cannot handle correctly.
+    if (isCharLevel && seg.text && seg.text.trim()) {
+      // Strip spaces between Thai/CJK chars (char-level artifacts),
+      // but KEEP spaces between Latin words (e.g. "Unrivaled Bound States")
+      const segTextClean = seg.text.trim().replace(/\s+/g, (match, offset, str) => {
+        const before = str[offset - 1];
+        const after = str[offset + match.length];
+        if (!before || !after) return "";
+        // Keep space if both neighbors are Latin/digit characters
+        const isBeforeLatin = /[a-zA-Z0-9]/.test(before);
+        const isAfterLatin = /[a-zA-Z0-9]/.test(after);
+        if (isBeforeLatin && isAfterLatin) return " ";
+        return "";
+      });
+      const segTextChars = [...segTextClean];
+      const segTextCharCount = segTextChars.length;
+
+      if (segTextCharCount === 0) continue;
+
+      // Build per-character timestamp arrays from word tokens
+      const charStarts: number[] = [];
+      const charEnds: number[] = [];
+      for (const w of wordsData) {
+        const chars = w.word || "";
+        const st = w.start || 0;
+        const en = w.end || 0;
+        for (const _c of chars) {
+          charStarts.push(st);
+          charEnds.push(en);
+        }
+      }
+
+      // Use Intl.Segmenter on the CORRECT seg.text (not the garbled char concatenation)
+      let segmentedWords = segmentWords(segTextClean, lang);
+
+      // Split words containing sentence-ending punctuation
+      const splitWords: string[] = [];
+      for (const word of segmentedWords) {
+        const parts = word.split(/([?!]+)/);
+        for (const p of parts) {
+          const sub = p.split(/(\.{2,}|…)/);
+          for (const s of sub) {
+            if (s) splitWords.push(s);
+          }
+        }
+      }
+      segmentedWords = splitWords;
+
+      // Map timestamps proportionally from char tokens to seg.text chars
+      // Use proportional mapping: char position in seg.text → position in char timestamps
+      const tokenCharCount = charStarts.length;
+      const INTERNAL_GAP_THRESHOLD = 0.15;
+      const MAX_CHAR_DUR = 0.25;
+      let textPos = 0;
+
+      for (const word of segmentedWords) {
+        const wordLen = word.length;
+        const wordEndPos = textPos + wordLen;
+
+        if (word.trim() && textPos < segTextCharCount && wordEndPos <= segTextCharCount) {
+          // Map text position to char-token position proportionally
+          const mappedStartIdx = Math.min(
+            Math.floor((textPos / segTextCharCount) * tokenCharCount),
+            tokenCharCount - 1
+          );
+          const mappedEndIdx = Math.min(
+            Math.floor(((wordEndPos - 1) / segTextCharCount) * tokenCharCount),
+            tokenCharCount - 1
+          );
+
+          let wordStart = charStarts[mappedStartIdx];
+          const wordEnd = charEnds[mappedEndIdx];
+
+          // Internal gap detection
+          if (mappedEndIdx - mappedStartIdx >= 1) {
+            for (let ci = mappedStartIdx; ci < mappedEndIdx; ci++) {
+              const gap = charStarts[ci + 1] - charEnds[ci];
+              if (gap > INTERNAL_GAP_THRESHOLD) {
+                wordStart = charStarts[ci + 1];
+                break;
+              }
+            }
+          }
+
+          // Absorbed pause detection
+          if (mappedEndIdx - mappedStartIdx >= 1) {
+            const firstDur = charEnds[mappedStartIdx] - charStarts[mappedStartIdx];
+            if (firstDur > MAX_CHAR_DUR) {
+              const remainingDurs = [];
+              for (let j = mappedStartIdx + 1; j <= mappedEndIdx; j++) {
+                const d = charEnds[j] - charStarts[j];
+                if (d > 0) remainingDurs.push(d);
+              }
+              const avgDur = remainingDurs.length > 0
+                ? remainingDurs.reduce((a, b) => a + b, 0) / remainingDurs.length
+                : 0.08;
+              const newStart = charEnds[mappedStartIdx] - Math.min(avgDur, MAX_CHAR_DUR);
+              if (newStart > wordStart) {
+                wordStart = Math.round(newStart * 1000) / 1000;
+              }
+            }
+          } else if (wordLen === 1) {
+            const dur = wordEnd - wordStart;
+            if (dur > MAX_CHAR_DUR) {
+              wordStart = Math.round((wordEnd - MAX_CHAR_DUR) * 1000) / 1000;
+            }
+          }
+
+          result.push({ word: word.trim(), start: wordStart, end: wordEnd });
+        }
+        textPos = wordEndPos;
+      }
+      continue; // Skip the word-level path below
+    }
+
+    // ──── WORD-LEVEL PATH ────
+    // When tokens are proper words (English, etc.), use them directly.
+
     // Step 1: Build per-character timestamp arrays
     const charStarts: number[] = [];
     const charEnds: number[] = [];
     let textFromJson = "";
 
-    for (const w of wordsData) {
-      const chars = w.word || "";
-      const st = w.start || 0;
-      const en = w.end || 0;
+    for (let wi = 0; wi < wordsData.length; wi++) {
+      const chars = wordsData[wi].word || "";
+      const st = wordsData[wi].start || 0;
+      const en = wordsData[wi].end || 0;
+
+      // Insert space between consecutive Latin words (e.g. "Cohelent" + "Logical")
+      if (wi > 0 && chars.length > 0 && textFromJson.length > 0) {
+        const prevChar = textFromJson[textFromJson.length - 1];
+        const currChar = chars[0];
+        if (/[a-zA-Z0-9]/.test(prevChar) && /[a-zA-Z0-9]/.test(currChar)) {
+          textFromJson += " ";
+          // Space inherits timing from the gap between prev and current word
+          charStarts.push(st);
+          charEnds.push(st);
+        }
+      }
+
       for (const _c of chars) {
         charStarts.push(st);
         charEnds.push(en);
@@ -474,11 +618,19 @@ export function buildCaptionsByPause(
   }
 
   for (let i = 0; i < words.length; i++) {
+    // Check if adding this word would exceed maxChars
+    const testIndices = [...currIndices, i];
+    const testWords = testIndices.map(idx => words[idx].word);
+    const testLen = normSpace(smartJoinWords(testWords)).length;
+
+    if (currIndices.length > 0 && testLen > maxChars) {
+      // Flush current buffer BEFORE adding this word
+      flush();
+    }
+
     currIndices.push(i);
 
-    const wordList = currIndices.map(idx => words[idx].word);
-    const textLen = normSpace(smartJoinWords(wordList)).length;
-
+    // Check for pause, sentence end, or last word
     let hasPause = false;
     if (i + 1 < words.length) {
       const gap = words[i + 1].start - words[i].end;
@@ -492,12 +644,138 @@ export function buildCaptionsByPause(
 
     const isLast = i + 1 >= words.length;
 
-    if (hasPause || endsSentence || isLast || textLen >= maxChars) {
+    if (hasPause || endsSentence || isLast) {
       flush();
     }
   }
 
   return caps;
+}
+
+/**
+ * AI-enhanced version of buildCaptionsByPause.
+ * Sends words to Gemini to get proper sentence boundaries,
+ * then post-processes to enforce maxChars limit.
+ * Falls back to pause-based logic if AI is unavailable.
+ */
+export async function buildCaptionsByPauseAI(
+  words: ExtractedWord[],
+  pauseThreshold = 0.3,
+  maxChars = 32
+): Promise<Caption[]> {
+  // Try AI re-segmentation first
+  const aiGroups = await aiResegment(words, maxChars);
+
+  if (aiGroups && aiGroups.length > 0) {
+    // Build captions from AI groups, splitting oversized ones
+    const caps: Caption[] = [];
+    for (const group of aiGroups) {
+      if (!group.length) continue;
+      const validIndices = group.filter(i => i >= 0 && i < words.length);
+      if (!validIndices.length) continue;
+
+      // Check if this group exceeds maxChars
+      const wordList = validIndices.map(i => words[i].word);
+      const fullText = normSpace(smartJoinWords(wordList));
+
+      if (fullText.length <= maxChars || validIndices.length <= 1) {
+        // Fits within limit — use as-is
+        const firstIdx = validIndices[0];
+        const lastIdx = validIndices[validIndices.length - 1];
+        let currStart = words[firstIdx].start;
+        let currEnd = words[lastIdx].end;
+        if (currEnd - currStart < 0.01) currEnd = currStart + 0.01;
+        if (fullText) caps.push([currStart, currEnd, fullText]);
+      } else {
+        // Too long — split into sub-groups that fit maxChars
+        const subGroups = splitGroupByMaxChars(words, validIndices, maxChars);
+        for (const sub of subGroups) {
+          if (!sub.length) continue;
+          const subWords = sub.map(i => words[i].word);
+          const subText = normSpace(smartJoinWords(subWords));
+          if (subText) {
+            let st = words[sub[0]].start;
+            let en = words[sub[sub.length - 1]].end;
+            if (en - st < 0.01) en = st + 0.01;
+            caps.push([st, en, subText]);
+          }
+        }
+      }
+    }
+
+    if (caps.length > 0) {
+      // Validate: count total text characters in AI captions vs original words
+      const totalWordChars = words.reduce((sum, w) => sum + w.word.trim().length, 0);
+      const totalCaptionChars = caps.reduce((sum, c) => sum + c[2].replace(/\s/g, "").length, 0);
+      const charCoverage = totalCaptionChars / Math.max(totalWordChars, 1);
+
+      if (charCoverage < 0.8) {
+        // AI captions lost too many characters — fall back
+        console.warn(`[ass] ⚠️ AI caption char coverage too low: ${totalCaptionChars}/${totalWordChars} (${(charCoverage * 100).toFixed(1)}%). Falling back.`);
+      } else {
+        console.log(`[ass] AI segmentation: ${caps.length} captions (char coverage: ${(charCoverage * 100).toFixed(1)}%)`);
+        return caps;
+      }
+    }
+  }
+
+  // Fallback to original pause-based logic
+  console.log("[ass] Falling back to pause-based segmentation");
+  return buildCaptionsByPause(words, pauseThreshold, maxChars);
+}
+
+/** Split a group of word indices into sub-groups that fit within maxChars */
+function splitGroupByMaxChars(
+  words: ExtractedWord[],
+  indices: number[],
+  maxChars: number
+): number[][] {
+  const result: number[][] = [];
+  let current: number[] = [];
+  let currentLen = 0;
+
+  for (let i = 0; i < indices.length; i++) {
+    const idx = indices[i];
+    const wordLen = words[idx].word.length;
+
+    if (current.length > 0 && currentLen + wordLen > maxChars) {
+      // Would exceed — try to find a better split point
+      // Look back for a connector word (ที่, และ, แต่, เพราะ, ของ, กับ, หรือ, ใน)
+      const connectors = new Set(["ที่", "และ", "แต่", "เพราะ", "ของ", "กับ", "หรือ", "ใน", "จะ", "ก็", "คือ", "ว่า"]);
+      let splitAt = -1;
+
+      // Search from the end of current group for a connector
+      for (let j = current.length - 1; j >= Math.floor(current.length * 0.3); j--) {
+        if (connectors.has(words[current[j]].word)) {
+          // Split BEFORE this connector (connector goes to next group)
+          splitAt = j;
+          break;
+        }
+      }
+
+      if (splitAt > 0) {
+        // Split at connector: current[0..splitAt-1] goes to result
+        result.push(current.slice(0, splitAt));
+        // Remaining + current word start new group
+        current = [...current.slice(splitAt), idx];
+        currentLen = current.reduce((sum, ci) => sum + words[ci].word.length, 0);
+      } else {
+        // No good connector found — flush current as-is
+        result.push([...current]);
+        current = [idx];
+        currentLen = wordLen;
+      }
+    } else {
+      current.push(idx);
+      currentLen += wordLen;
+    }
+  }
+
+  if (current.length > 0) {
+    result.push(current);
+  }
+
+  return result;
 }
 
 export function buildCaptionsSmart(
@@ -592,10 +870,10 @@ export function buildCaptionsSmart(
 
 // ============ ASS Output ============
 
-export function generateAssContent(
+export async function generateAssContent(
   data: WhisperData,
   options: AssGeneratorOptions
-): { content: string; captionCount: number } {
+): Promise<{ content: string; captionCount: number }> {
   const {
     mode,
     orientation = "portrait",
@@ -618,7 +896,8 @@ export function generateAssContent(
       caps = buildCaptionsWordByWord(words);
       break;
     case "pause":
-      caps = buildCaptionsByPause(words, pauseThreshold, maxChars);
+      // Try AI-enhanced pause first (Gemini), auto-fallback to regular pause
+      caps = await buildCaptionsByPauseAI(words, pauseThreshold, maxChars);
       break;
     case "smart":
       caps = buildCaptionsSmart(words, {

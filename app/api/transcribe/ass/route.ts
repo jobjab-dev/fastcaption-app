@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
     let assMode: "pause" | "word" | "smart" = "pause";
     let orientation: "portrait" | "landscape" = "portrait";
     let language = "th";
+    let maxChars: number | undefined;
     let fileName = "subtitle";
 
     if (contentType.includes("multipart/form-data")) {
@@ -33,6 +34,8 @@ export async function POST(request: NextRequest) {
       assMode = (formData.get("assMode") as "pause" | "word" | "smart") || "pause";
       orientation = (formData.get("orientation") as "portrait" | "landscape") || "portrait";
       language = (formData.get("language") as string) || "th";
+      const maxCharsStr = formData.get("maxChars") as string;
+      if (maxCharsStr) maxChars = parseInt(maxCharsStr, 10);
 
       if (!jsonFile) {
         // Try jobId mode from form data
@@ -72,6 +75,7 @@ export async function POST(request: NextRequest) {
       assMode = body.assMode || "pause";
       orientation = body.orientation || "portrait";
       language = body.language || "th";
+      if (body.maxChars) maxChars = parseInt(body.maxChars, 10);
 
       if (!jobId) {
         return NextResponse.json({ error: "jobId required" }, { status: 400 });
@@ -87,11 +91,12 @@ export async function POST(request: NextRequest) {
       fileName = job.fileName.replace(/\.[^.]+$/, "");
     }
 
-    // Generate ASS — pure in-memory, no filesystem
-    const result = generateAss(jsonContent, {
+    // Generate ASS — pure in-memory, no filesystem (AI-enhanced for pause mode)
+    const result = await generateAss(jsonContent, {
       mode: assMode,
       orientation,
       language,
+      maxChars,
     });
 
     if (!result.success || !result.content) {

@@ -120,11 +120,13 @@ export async function POST(request: NextRequest) {
       : await runTranscription(audioUrl, { language });
 
     if (processResult.success && processResult.resultJson) {
+      const finalResultJson = processResult.resultJson;
+
       await prisma.job.update({
         where: { id: job.id },
         data: {
           status: "done",
-          resultJson: processResult.resultJson,
+          resultJson: finalResultJson,
           completedAt: new Date(),
         },
       });
@@ -134,7 +136,7 @@ export async function POST(request: NextRequest) {
         const outputPath = `${user.id}/${job.id}/result.json`;
         supabase.storage
           .from("subtitle-outputs")
-          .upload(outputPath, new Blob([processResult.resultJson], { type: "application/json" }), {
+          .upload(outputPath, new Blob([finalResultJson], { type: "application/json" }), {
             contentType: "application/json",
             upsert: true,
           })

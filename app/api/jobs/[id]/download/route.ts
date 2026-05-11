@@ -107,9 +107,9 @@ export async function GET(
       }
     }
 
-    // Generate ASS
+    // Generate ASS (AI-enhanced for pause mode)
     const lang = job.language || "th";
-    const { content } = generateAssContent(resultData, { mode, orientation, lang });
+    const { content } = await generateAssContent(resultData, { mode, orientation, lang });
 
     // Cache in Storage (fire and forget)
     if (supabase) {

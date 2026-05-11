@@ -130,74 +130,92 @@ async function runWithFallbackModel(
 
   console.log(`[replicate-fallback] Starting with incredibly-fast-whisper, lang: ${options.language}`);
 
-  const startTime = Date.now();
-
-  // Build input — use URL directly (Supabase Storage signed URL)
-  const input: Record<string, unknown> = {
-    audio: audioUrl,
-    task: "transcribe",
-    timestamp: "word",
-    batch_size: 8,
-  };
-
   const langMap: Record<string, string> = {
     "th": "thai", "en": "english", "zh": "chinese", "ja": "japanese",
     "ko": "korean", "vi": "vietnamese", "id": "indonesian", "ms": "malay",
     "de": "german", "fr": "french", "es": "spanish", "pt": "portuguese",
     "ru": "russian", "ar": "arabic", "hi": "hindi", "auto": "None",
   };
-  input.language = langMap[options.language] || "None";
+  const language = langMap[options.language] || "None";
 
-  console.log(`[replicate-fallback] Running incredibly-fast-whisper with timestamp=word, language=${input.language}`);
+  // Try with descending batch sizes — higher is faster & cheaper (less GPU time), lower avoids OOM
+  const batchSizes = [64, 24, 8];
 
-  let lastStatus = "";
-  let lastLogLength = 0;
+  for (const batchSize of batchSizes) {
+    const startTime = Date.now();
 
-  const output = await replicate.run(
-    WHISPER_FALLBACK,
-    {
-      input,
-      wait: { mode: "poll" as const, interval: 2000 },
-    },
-    (prediction) => {
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      if (prediction.status !== lastStatus) {
-        lastStatus = prediction.status;
-        const gpuTime = prediction.metrics?.predict_time ? ` (GPU: ${prediction.metrics.predict_time.toFixed(1)}s)` : "";
-        console.log(`[replicate-fallback] ⏱ ${elapsed}s — Status: ${prediction.status}${gpuTime}`);
-      }
-      if (prediction.logs && prediction.logs.length > lastLogLength) {
-        const newLogs = prediction.logs.slice(lastLogLength).trim();
-        if (newLogs) {
-          const lines = newLogs.split("\n").slice(-2);
-          for (const line of lines) {
-            if (line.trim()) {
-              console.log(`[replicate-fallback] 📋 ${line.trim()}`);
+    const input: Record<string, unknown> = {
+      audio: audioUrl,
+      task: "transcribe",
+      timestamp: "chunk",
+      batch_size: batchSize,
+      language,
+    };
+
+    console.log(`[replicate-fallback] Running with timestamp=chunk, batch_size=${batchSize}, language=${language}`);
+
+    let lastStatus = "";
+    let lastLogLength = 0;
+
+    try {
+      const output = await replicate.run(
+        WHISPER_FALLBACK,
+        {
+          input,
+          wait: { mode: "poll" as const, interval: 2000 },
+        },
+        (prediction) => {
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          if (prediction.status !== lastStatus) {
+            lastStatus = prediction.status;
+            const gpuTime = prediction.metrics?.predict_time ? ` (GPU: ${prediction.metrics.predict_time.toFixed(1)}s)` : "";
+            console.log(`[replicate-fallback] ⏱ ${elapsed}s — Status: ${prediction.status}${gpuTime}`);
+          }
+          if (prediction.logs && prediction.logs.length > lastLogLength) {
+            const newLogs = prediction.logs.slice(lastLogLength).trim();
+            if (newLogs) {
+              const lines = newLogs.split("\n").slice(-2);
+              for (const line of lines) {
+                if (line.trim()) {
+                  console.log(`[replicate-fallback] 📋 ${line.trim()}`);
+                }
+              }
             }
+            lastLogLength = prediction.logs.length;
           }
         }
-        lastLogLength = prediction.logs.length;
+      ) as Record<string, unknown>;
+
+      const runTime = (Date.now() - startTime) / 1000;
+      console.log(`[replicate-fallback] ✅ Completed in ${runTime.toFixed(1)}s (batch_size=${batchSize})`);
+      console.log(`[replicate-fallback] Raw output type: ${typeof output}, keys: ${Object.keys(output)}`);
+
+      // Transform output to our internal format
+      const result = transformFallbackModelOutput(output);
+      const resultJson = JSON.stringify(result, null, 2);
+
+      return {
+        success: true,
+        resultJson,
+        segments: result.segments?.length ?? 0,
+        replicateRunTime: runTime,
+        modelUsed: "incredibly-fast-whisper (fallback)",
+      };
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const isOOM = errMsg.includes("CUDA out of memory") || errMsg.includes("OOM");
+
+      if (isOOM && batchSize !== batchSizes[batchSizes.length - 1]) {
+        console.warn(`[replicate-fallback] ⚠️ OOM with batch_size=${batchSize}, retrying with smaller batch...`);
+        continue;
       }
+      // Not OOM or last attempt — throw
+      throw err;
     }
-  ) as Record<string, unknown>;
+  }
 
-  const runTime = (Date.now() - startTime) / 1000;
-  console.log(`[replicate-fallback] ✅ Fallback model completed in ${runTime.toFixed(1)}s`);
-  console.log(`[replicate-fallback] Raw output type: ${typeof output}, keys: ${Object.keys(output)}`);
-
-  // Transform output to our internal format
-  const result = transformFallbackModelOutput(output);
-
-  // Return JSON string for DB storage
-  const resultJson = JSON.stringify(result, null, 2);
-
-  return {
-    success: true,
-    resultJson,
-    segments: result.segments?.length ?? 0,
-    replicateRunTime: runTime,
-    modelUsed: "incredibly-fast-whisper (fallback)",
-  };
+  // Should never reach here, but just in case
+  return { success: false, error: "All batch sizes exhausted" };
 }
 
 /** Run forced alignment — transcribe first, then align script text to transcription timestamps. */
@@ -523,7 +541,10 @@ function transformCustomModelOutput(output: Record<string, unknown>): {
   return { segments: [], language: undefined };
 }
 
-/** Transform incredibly-fast-whisper output to our internal format */
+/** Transform incredibly-fast-whisper chunk output to our internal format.
+ *  Chunk mode returns sentence-level chunks (not character-level tokens).
+ *  Each chunk becomes a segment with per-character words for timestamp mapping.
+ */
 function transformFallbackModelOutput(output: Record<string, unknown>): {
   segments: Array<{
     start: number; end: number; text: string;
@@ -542,58 +563,63 @@ function transformFallbackModelOutput(output: Record<string, unknown>): {
     return { segments: [], language: undefined };
   }
 
-  const allWords: Array<{ word: string; start: number; end: number }> = [];
-  for (const chunk of rawChunks) {
-    const ts = chunk.timestamp as [number, number] | undefined;
-    if (!ts || !Array.isArray(ts)) continue;
-    const start = Number(ts[0]) || 0;
-    const end = Number(ts[1]) || start;
-    const text = String(chunk.text || "").trim();
-    if (!text) continue;
-    allWords.push({ word: text, start, end });
-  }
-
-  if (allWords.length === 0) {
-    return { segments: [], language: undefined };
-  }
-
-  const PAUSE_THRESHOLD = 1.0;
   const segments: Array<{
     start: number; end: number; text: string;
     words: Array<{ start: number; end: number; word: string }>;
   }> = [];
 
-  let currentWords: typeof allWords = [allWords[0]];
+  for (const chunk of rawChunks) {
+    const ts = chunk.timestamp as [number, number | null] | undefined;
+    if (!ts || !Array.isArray(ts)) continue;
+    const start = Number(ts[0]) || 0;
+    const end = ts[1] != null ? Number(ts[1]) : start;
+    const text = String(chunk.text || "").trim();
+    if (!text) continue;
 
-  for (let i = 1; i < allWords.length; i++) {
-    const prev = allWords[i - 1];
-    const curr = allWords[i];
-    const gap = curr.start - prev.end;
+    // Generate word tokens with proportional timestamps.
+    // Split by spaces first to preserve English word boundaries.
+    // Latin/ASCII tokens stay as whole words; Thai/CJK tokens get split per-character.
+    const spacedTokens = text.split(/(\s+)/).filter(t => t.trim().length > 0);
 
-    if (gap > PAUSE_THRESHOLD) {
-      segments.push({
-        start: currentWords[0].start,
-        end: currentWords[currentWords.length - 1].end,
-        text: currentWords.map(w => w.word).join(" "),
-        words: currentWords,
-      });
-      currentWords = [curr];
-    } else {
-      currentWords.push(curr);
+    // Calculate total character count for proportional timing
+    const totalChars = spacedTokens.reduce((sum, t) => sum + [...t].length, 0);
+    const duration = end - start;
+    const durPerChar = totalChars > 0 ? duration / totalChars : 0;
+
+    const words: Array<{ word: string; start: number; end: number }> = [];
+    let charOffset = 0;
+
+    for (const token of spacedTokens) {
+      const isLatin = /^[a-zA-Z0-9\s\-'.,!?:;"()]+$/.test(token);
+
+      if (isLatin) {
+        // Keep as one word token (e.g. "Topological")
+        const tokenChars = [...token].length;
+        words.push({
+          word: token,
+          start: Math.round((start + charOffset * durPerChar) * 1000) / 1000,
+          end: Math.round((start + (charOffset + tokenChars) * durPerChar) * 1000) / 1000,
+        });
+        charOffset += tokenChars;
+      } else {
+        // Thai/CJK: split into per-character tokens
+        const chars = [...token];
+        for (let ci = 0; ci < chars.length; ci++) {
+          words.push({
+            word: chars[ci],
+            start: Math.round((start + (charOffset + ci) * durPerChar) * 1000) / 1000,
+            end: Math.round((start + (charOffset + ci + 1) * durPerChar) * 1000) / 1000,
+          });
+        }
+        charOffset += chars.length;
+      }
     }
+
+    segments.push({ start, end, text, words });
   }
 
-  if (currentWords.length > 0) {
-    segments.push({
-      start: currentWords[0].start,
-      end: currentWords[currentWords.length - 1].end,
-      text: currentWords.map(w => w.word).join(" "),
-      words: currentWords,
-    });
-  }
-
-  const totalWords = segments.reduce((sum, s) => sum + s.words.length, 0);
-  console.log(`[transform-fallback] ${segments.length} segments, ${totalWords} words (fallback model)`);
+  const totalChars = segments.reduce((sum, s) => sum + s.words.length, 0);
+  console.log(`[transform-fallback] ${segments.length} segments, ${totalChars} chars (chunk mode)`);
 
   return {
     segments,
@@ -602,7 +628,7 @@ function transformFallbackModelOutput(output: Record<string, unknown>): {
 }
 
 /** Generate ASS content from JSON data string — pure in-memory, no filesystem */
-export function generateAss(
+export async function generateAss(
   jsonContent: string,
   options: {
     mode: "pause" | "word" | "smart";
@@ -611,7 +637,7 @@ export function generateAss(
     maxChars?: number;
     language?: string;
   }
-): { success: boolean; content?: string; captions?: number; error?: string } {
+): Promise<{ success: boolean; content?: string; captions?: number; error?: string }> {
   try {
     // generateAssContent imported at top of file
     const data = JSON.parse(jsonContent);
@@ -622,7 +648,7 @@ export function generateAss(
 
     console.log(`[ass] Generating ASS (TypeScript): mode=${mode}, orientation=${options.orientation}, threshold=${pauseThreshold}, maxChars=${maxChars}`);
 
-    const { content, captionCount } = generateAssContent(data, {
+    const { content, captionCount } = await generateAssContent(data, {
       mode,
       orientation: options.orientation,
       pauseThreshold,
