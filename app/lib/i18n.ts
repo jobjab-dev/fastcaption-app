@@ -203,6 +203,12 @@ export const translations: Record<Locale, Record<string, string>> = {
     "tx.maxCharsHint48": "📺 Very long — for large screens or narration",
     "tx.orientLandscapeDesc": "Landscape — captions 2x longer",
     "tx.orientPortraitDesc": "Portrait — short & compact captions",
+    "tx.convertMath": "Convert LaTeX math to Unicode symbols (π², √, ∑, ∫...)",
+    "tx.timestampMode": "⏱ Timestamp Mode",
+    "tx.tsChunk": "Chunk (default)",
+    "tx.tsChunkDesc": "Averaged — faster, good for most cases",
+    "tx.tsWord": "Word-level",
+    "tx.tsWordDesc": "Character-level — more accurate timing",
 
     // ── Affiliate ──
     "aff.title": "Affiliate Program",
@@ -429,6 +435,12 @@ export const translations: Record<Locale, Record<string, string>> = {
     "tx.maxCharsHint48": "📺 ซับยาวมาก — เหมาะกับจอใหญ่หรือเนื้อหาที่เน้นบรรยาย",
     "tx.orientLandscapeDesc": "แนวนอน — caption ยาวขึ้น 2 เท่า",
     "tx.orientPortraitDesc": "แนวตั้ง — caption สั้นกระชับ",
+    "tx.convertMath": "แปลงสูตรคณิตศาสตร์ LaTeX เป็น Unicode (π², √, ∑, ∫...)",
+    "tx.timestampMode": "⏱ โหมด Timestamp",
+    "tx.tsChunk": "Chunk (ค่าเริ่มต้น)",
+    "tx.tsChunkDesc": "เฉลี่ยเวลา — เร็วกว่า เหมาะกับงานทั่วไป",
+    "tx.tsWord": "Word-level",
+    "tx.tsWordDesc": "ระดับตัวอักษร — เวลาแม่นยำกว่า",
 
     // ── Affiliate ──
     "aff.title": "Affiliate Program",

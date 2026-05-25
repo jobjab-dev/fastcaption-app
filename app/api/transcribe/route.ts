@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   try {
     // Client uploads file directly to Supabase Storage, then sends metadata here
     const body = await request.json();
-    const { storagePath, fileName, fileSize, fileType, language = "th", mode = "transcribe", scriptText = "" } = body as {
+    const { storagePath, fileName, fileSize, fileType, language = "th", mode = "transcribe", scriptText = "", timestampMode = "chunk" } = body as {
       storagePath: string;
       fileName: string;
       fileSize: number;
@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
       language?: string;
       mode?: string;
       scriptText?: string;
+      timestampMode?: "chunk" | "word";
     };
 
     if (!storagePath || !fileName || !fileSize) {
@@ -116,8 +117,8 @@ export async function POST(request: NextRequest) {
     const audioUrl = signedUrlData.signedUrl;
 
     const processResult = mode === "align"
-      ? await runAlignment(audioUrl, scriptText, { language })
-      : await runTranscription(audioUrl, { language });
+      ? await runAlignment(audioUrl, scriptText, { language, timestampMode })
+      : await runTranscription(audioUrl, { language, timestampMode });
 
     if (processResult.success && processResult.resultJson) {
       const finalResultJson = processResult.resultJson;

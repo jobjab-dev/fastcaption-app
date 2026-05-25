@@ -40,6 +40,7 @@ export function estimateAudioDuration(fileSize: number, mimeType: string): numbe
 
 interface TranscriptionOptions {
   language: string;
+  timestampMode?: "chunk" | "word";  // chunk = averaged (default), word = character-level from Whisper
 }
 
 interface TranscriptionResult {
@@ -144,15 +145,16 @@ async function runWithFallbackModel(
   for (const batchSize of batchSizes) {
     const startTime = Date.now();
 
+    const tsMode = options.timestampMode || "chunk";
     const input: Record<string, unknown> = {
       audio: audioUrl,
       task: "transcribe",
-      timestamp: "chunk",
+      timestamp: tsMode,
       batch_size: batchSize,
       language,
     };
 
-    console.log(`[replicate-fallback] Running with timestamp=chunk, batch_size=${batchSize}, language=${language}`);
+    console.log(`[replicate-fallback] Running with timestamp=${tsMode}, batch_size=${batchSize}, language=${language}`);
 
     let lastStatus = "";
     let lastLogLength = 0;
@@ -263,8 +265,16 @@ export async function runAlignment(
     // Step 4: Align script to transcription using LCS
     const scriptTimestamps = alignScriptToTimeline(scriptClean, charTimeline);
 
-    // Step 5: Build aligned output
-    const alignedOutput = buildAlignedOutput(scriptText, scriptTimestamps, data.language || options.language) as {
+    // Step 4b: Reassign timestamps by chunk boundaries to preserve real speech gaps
+    // LCS interpolation destroys gaps between Whisper chunks — this restores them
+    const chunkBoundaries = segments.map(s => ({ start: s.start, end: s.end }));
+    const { adjustedTimestamps, chunkAssignments } = reassignByChunkBoundaries(
+      scriptTimestamps, chunkBoundaries
+    );
+    console.log(`[align] Chunk-aware reassignment: ${chunkBoundaries.length} chunk boundaries preserved`);
+
+    // Step 5: Build aligned output (split by chunk boundaries, not newlines)
+    const alignedOutput = buildAlignedOutput(scriptText, adjustedTimestamps, chunkAssignments, data.language || options.language) as {
       segments: Array<{ words?: unknown[] }>;
       [key: string]: unknown;
     };
@@ -454,10 +464,90 @@ function alignScriptToTimeline(
   return timestamps;
 }
 
-/** Build aligned output as segments with per-character "words" */
+/**
+ * Reassign timestamps to respect chunk boundaries from Whisper.
+ * After LCS alignment, timestamps are interpolated across chunk gaps,
+ * destroying real speech pauses. This function re-assigns each char to its
+ * original Whisper chunk and distributes timestamps proportionally within
+ * each chunk, preserving the real gaps between chunks.
+ */
+function reassignByChunkBoundaries(
+  timestamps: Array<[number, number]>,
+  chunks: Array<{ start: number; end: number }>
+): { adjustedTimestamps: Array<[number, number]>; chunkAssignments: number[] } {
+  const n = timestamps.length;
+  if (n === 0 || chunks.length === 0) {
+    return { adjustedTimestamps: [...timestamps], chunkAssignments: new Array(n).fill(0) };
+  }
+
+  const chunkAssignments = new Array(n).fill(0);
+
+  // Step 1: Assign each char to its chunk based on timestamp midpoint
+  for (let i = 0; i < n; i++) {
+    const mid = (timestamps[i][0] + timestamps[i][1]) / 2;
+    let bestChunk = 0;
+    let bestDist = Infinity;
+    for (let c = 0; c < chunks.length; c++) {
+      if (mid >= chunks[c].start && mid <= chunks[c].end) {
+        bestChunk = c;
+        bestDist = 0;
+        break;
+      }
+      const dist = Math.min(
+        Math.abs(mid - chunks[c].start),
+        Math.abs(mid - chunks[c].end)
+      );
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestChunk = c;
+      }
+    }
+    chunkAssignments[i] = bestChunk;
+  }
+
+  // Step 2: Ensure monotonically non-decreasing chunk assignments
+  // LCS guarantees order, but gap chars might fluctuate — enforce monotonic
+  for (let i = 1; i < n; i++) {
+    if (chunkAssignments[i] < chunkAssignments[i - 1]) {
+      chunkAssignments[i] = chunkAssignments[i - 1];
+    }
+  }
+
+  // Step 3: Redistribute timestamps proportionally within each chunk
+  const adjustedTimestamps: Array<[number, number]> = new Array(n)
+    .fill(null)
+    .map(() => [-1, -1] as [number, number]);
+
+  let groupStart = 0;
+  while (groupStart < n) {
+    const chunk = chunkAssignments[groupStart];
+    let groupEnd = groupStart + 1;
+    while (groupEnd < n && chunkAssignments[groupEnd] === chunk) groupEnd++;
+
+    const groupSize = groupEnd - groupStart;
+    const seg = chunks[chunk];
+    if (seg) {
+      const charDur = (seg.end - seg.start) / groupSize;
+      for (let g = 0; g < groupSize; g++) {
+        adjustedTimestamps[groupStart + g] = [
+          Math.round((seg.start + g * charDur) * 1000) / 1000,
+          Math.round((seg.start + (g + 1) * charDur) * 1000) / 1000,
+        ];
+      }
+    }
+    groupStart = groupEnd;
+  }
+
+  return { adjustedTimestamps, chunkAssignments };
+}
+
+/** Build aligned output as segments split by chunk boundaries.
+ *  Each Whisper chunk becomes a separate segment, preserving real speech gaps.
+ */
 function buildAlignedOutput(
   scriptText: string,
   scriptTimestamps: Array<[number, number]>,
+  chunkAssignments: number[],
   language: string
 ): Record<string, unknown> {
   const segments: Array<{
@@ -466,35 +556,50 @@ function buildAlignedOutput(
   }> = [];
 
   let cleanIdx = 0;
-  const lines = scriptText.split("\n");
+  let currentChunk = -1;
+  let currentWords: Array<{ word: string; start: number; end: number }> = [];
+  let currentText = '';
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    const words: Array<{ word: string; start: number; end: number }> = [];
-    for (const ch of trimmed) {
-      if (ch.trim() && cleanIdx < scriptTimestamps.length) {
-        words.push({
-          word: ch,
-          start: Math.round(scriptTimestamps[cleanIdx][0] * 1000) / 1000,
-          end: Math.round(scriptTimestamps[cleanIdx][1] * 1000) / 1000,
-        });
-        cleanIdx++;
-      } else if (!ch.trim()) {
-        // Skip whitespace (not in clean index)
-      }
-    }
-
-    if (words.length > 0) {
+  function flushSegment() {
+    if (currentWords.length > 0) {
       segments.push({
-        start: words[0].start,
-        end: words[words.length - 1].end,
-        text: trimmed,
-        words,
+        start: currentWords[0].start,
+        end: currentWords[currentWords.length - 1].end,
+        text: currentText.trim(),
+        words: [...currentWords],
       });
     }
+    currentWords = [];
+    currentText = '';
   }
+
+  for (const ch of scriptText) {
+    if (ch.trim() && cleanIdx < scriptTimestamps.length) {
+      const chunk = chunkAssignments[cleanIdx];
+
+      // If chunk changed, flush current segment (creates gap between chunks)
+      if (chunk !== currentChunk && currentWords.length > 0) {
+        flushSegment();
+      }
+      currentChunk = chunk;
+
+      currentWords.push({
+        word: ch,
+        start: Math.round(scriptTimestamps[cleanIdx][0] * 1000) / 1000,
+        end: Math.round(scriptTimestamps[cleanIdx][1] * 1000) / 1000,
+      });
+      currentText += ch;
+      cleanIdx++;
+    } else if (!ch.trim()) {
+      // Whitespace: include in current segment text for display
+      if (currentWords.length > 0) {
+        currentText += ch;
+      }
+    }
+  }
+
+  // Flush final segment
+  flushSegment();
 
   return { segments, language };
 }
@@ -636,6 +741,18 @@ export async function generateAss(
     pauseThreshold?: number;
     maxChars?: number;
     language?: string;
+    // Font style options (passed through to generateAssContent)
+    fontName?: string;
+    fontSize?: number;
+    primaryColor?: string;
+    outlineColor?: string;
+    backColor?: string;
+    outlineWidth?: number;
+    shadowDepth?: number;
+    bold?: boolean;
+    italic?: boolean;
+    alignment?: number;
+    marginV?: number;
   }
 ): Promise<{ success: boolean; content?: string; captions?: number; error?: string }> {
   try {
@@ -653,6 +770,17 @@ export async function generateAss(
       orientation: options.orientation,
       pauseThreshold,
       maxChars,
+      fontName: options.fontName,
+      fontSize: options.fontSize,
+      primaryColor: options.primaryColor,
+      outlineColor: options.outlineColor,
+      backColor: options.backColor,
+      outlineWidth: options.outlineWidth,
+      shadowDepth: options.shadowDepth,
+      bold: options.bold,
+      italic: options.italic,
+      alignment: options.alignment,
+      marginV: options.marginV,
     });
 
     console.log(`[ass] ✅ Generated ${captionCount} captions`);

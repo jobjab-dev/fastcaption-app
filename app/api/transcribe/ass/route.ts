@@ -27,6 +27,34 @@ export async function POST(request: NextRequest) {
     let maxChars: number | undefined;
     let fileName = "subtitle";
 
+    // Font style options
+    let fontName: string | undefined;
+    let fontSize: number | undefined;
+    let primaryColor: string | undefined;
+    let outlineColor: string | undefined;
+    let backColor: string | undefined;
+    let outlineWidth: number | undefined;
+    let shadowDepth: number | undefined;
+    let bold: boolean | undefined;
+    let italic: boolean | undefined;
+    let alignment: number | undefined;
+    let marginV: number | undefined;
+
+    /** Helper to extract font params from a key-value source */
+    const extractFontParams = (get: (k: string) => string | null) => {
+      if (get("fontName")) fontName = get("fontName")!;
+      if (get("fontSize")) fontSize = parseInt(get("fontSize")!, 10);
+      if (get("primaryColor")) primaryColor = get("primaryColor")!;
+      if (get("outlineColor")) outlineColor = get("outlineColor")!;
+      if (get("backColor")) backColor = get("backColor")!;
+      if (get("outlineWidth")) outlineWidth = parseInt(get("outlineWidth")!, 10);
+      if (get("shadowDepth")) shadowDepth = parseInt(get("shadowDepth")!, 10);
+      if (get("bold")) bold = get("bold") === "true" || get("bold") === "1";
+      if (get("italic")) italic = get("italic") === "true" || get("italic") === "1";
+      if (get("alignment")) alignment = parseInt(get("alignment")!, 10);
+      if (get("marginV")) marginV = parseInt(get("marginV")!, 10);
+    };
+
     if (contentType.includes("multipart/form-data")) {
       // Mode 2: Uploaded JSON file
       const formData = await request.formData();
@@ -36,6 +64,7 @@ export async function POST(request: NextRequest) {
       language = (formData.get("language") as string) || "th";
       const maxCharsStr = formData.get("maxChars") as string;
       if (maxCharsStr) maxChars = parseInt(maxCharsStr, 10);
+      extractFontParams((k) => formData.get(k) as string | null);
 
       if (!jsonFile) {
         // Try jobId mode from form data
@@ -76,6 +105,7 @@ export async function POST(request: NextRequest) {
       orientation = body.orientation || "portrait";
       language = body.language || "th";
       if (body.maxChars) maxChars = parseInt(body.maxChars, 10);
+      extractFontParams((k) => body[k] ?? null);
 
       if (!jobId) {
         return NextResponse.json({ error: "jobId required" }, { status: 400 });
@@ -97,6 +127,17 @@ export async function POST(request: NextRequest) {
       orientation,
       language,
       maxChars,
+      fontName,
+      fontSize,
+      primaryColor,
+      outlineColor,
+      backColor,
+      outlineWidth,
+      shadowDepth,
+      bold,
+      italic,
+      alignment,
+      marginV,
     });
 
     if (!result.success || !result.content) {

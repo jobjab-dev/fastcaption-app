@@ -48,6 +48,18 @@ export interface AssGeneratorOptions {
   minSec?: number;
   styleName?: string;
   lang?: string;
+  // Font style options
+  fontName?: string;         // e.g. "Arial", "Kanit"
+  fontSize?: number;         // e.g. 64
+  primaryColor?: string;     // ASS color e.g. "&H00FFFFFF" (white)
+  outlineColor?: string;     // ASS color e.g. "&H00111111"
+  backColor?: string;        // ASS color e.g. "&H90000000"
+  outlineWidth?: number;     // 0-5, default 3
+  shadowDepth?: number;      // 0-4, default 0
+  bold?: boolean;
+  italic?: boolean;
+  alignment?: number;        // ASS alignment 1-9, default 2 (bottom-center)
+  marginV?: number;          // vertical margin, default 120
 }
 
 // ============ Constants ============
@@ -207,7 +219,9 @@ function capsToCsNoDrop(caps: Caption[]): CaptionCS[] {
     if (prevEnd >= 0) {
       const originalGap = st - prevEndSec;
       if (originalGap >= 0.05) {
-        const minSt = prevEnd + Math.max(3, toCsFloor(originalGap));
+        // Ensure minimum 3cs gap so editors show the break.
+        // Don't inflate beyond that — floor/ceil of raw times already preserves the real gap.
+        const minSt = prevEnd + 3;
         if (stCs < minSt) {
           stCs = minSt;
           if (enCs <= stCs) enCs = stCs + 1;
@@ -881,6 +895,18 @@ export async function generateAssContent(
     maxChars = 16,
     styleName = "Default",
     lang,
+    // Font style with defaults matching original hardcoded values
+    fontName = "Arial",
+    fontSize = 64,
+    primaryColor = "&H00FFFFFF",
+    outlineColor = "&H00111111",
+    backColor = "&H90000000",
+    outlineWidth = 3,
+    shadowDepth = 0,
+    bold = false,
+    italic = false,
+    alignment = 2,
+    marginV = 120,
   } = options;
 
   // Extract words from JSON
@@ -919,6 +945,10 @@ export async function generateAssContent(
   // Resolution based on orientation
   const [resX, resY] = orientation === "portrait" ? [1080, 1920] : [1920, 1080];
 
+  // Build ASS style line from options
+  const boldFlag = bold ? -1 : 0;
+  const italicFlag = italic ? -1 : 0;
+
   // Build ASS content
   let content = `\ufeff[Script Info]
 ScriptType: v4.00+
@@ -928,7 +958,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ${styleName},Arial,64,&H00FFFFFF,&H000000FF,&H00111111,&H90000000,0,0,0,0,100,100,0,0,1,3,0,2,80,80,120,1
+Style: ${styleName},${fontName},${fontSize},${primaryColor},&H000000FF,${outlineColor},${backColor},${boldFlag},${italicFlag},0,0,100,100,0,0,1,${outlineWidth},${shadowDepth},${alignment},80,80,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

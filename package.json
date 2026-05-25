@@ -12,6 +12,7 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
+    "@flycut/caption-react": "^1.1.0",
     "@google/genai": "^2.0.0",
     "@nowpaymentsio/nowpayments-api-js": "^1.0.5",
     "@prisma/client": "^6.19.2",
@@ -20,12 +21,14 @@
     "@supabase/supabase-js": "^2.105.0",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
+    "budoux": "^0.8.4",
     "next": "16.2.1",
     "omise": "^1.1.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "replicate": "^1.4.0",
-    "stripe": "^20.4.1"
+    "stripe": "^20.4.1",
+    "unicodeit": "^0.7.5"
   },
   "devDependencies": {
     "@types/node": "^20",

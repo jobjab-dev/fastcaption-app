@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { needsConversion, convertToMp3, formatFileSize, type ConvertProgress } from "@/app/lib/ffmpeg-convert";
+import { convertMathInText } from "@/app/lib/latex-to-unicode";
 import { useLocale } from "@/app/components/LocaleProvider";
 import { createSupabaseBrowserClient } from "@/app/lib/supabase/client";
 
@@ -48,6 +49,8 @@ export default function TranscribePage() {
   const [file, setFile] = useState<File | null>(null);
   const [language, setLanguage] = useState("th");
   const [scriptText, setScriptText] = useState("");
+  const [convertMath, setConvertMath] = useState(false);
+  const rawScriptRef = useRef("");
   const [status, setStatus] = useState<JobStatus>("idle");
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<JobResult | null>(null);
@@ -59,6 +62,7 @@ export default function TranscribePage() {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [maxChars, setMaxChars] = useState(16);
   const [assGenerating, setAssGenerating] = useState(false);
+  const [timestampMode, setTimestampMode] = useState<"chunk" | "word">("chunk");
 
   // Conversion state
   const [convertProgress, setConvertProgress] = useState<ConvertProgress | null>(null);
@@ -169,6 +173,7 @@ export default function TranscribePage() {
           language,
           mode: workMode,
           scriptText: workMode === "align" ? scriptText : undefined,
+          timestampMode,
         }),
       });
 
@@ -458,6 +463,37 @@ export default function TranscribePage() {
                 fontFamily: "inherit",
               }}
             />
+            {/* Math conversion checkbox */}
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginTop: "10px",
+                cursor: "pointer",
+                fontSize: "0.9rem",
+                color: "var(--text-secondary)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={convertMath}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setConvertMath(checked);
+                  if (checked) {
+                    rawScriptRef.current = scriptText;
+                    setScriptText(convertMathInText(scriptText));
+                  } else {
+                    setScriptText(rawScriptRef.current);
+                  }
+                }}
+                style={{ accentColor: "var(--accent)", width: "16px", height: "16px" }}
+              />
+              <span>
+                🔢 {t("tx.convertMath")}
+              </span>
+            </label>
           </div>
         )}
 
@@ -473,6 +509,50 @@ export default function TranscribePage() {
               <option key={lang.code} value={lang.code}>{lang.name}</option>
             ))}
           </select>
+        </div>
+
+        {/* Timestamp Mode */}
+        <div style={{ marginTop: "16px" }}>
+          <label className="form-label">{t("tx.timestampMode")}</label>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "8px",
+          }}>
+            {([
+              { value: "chunk" as const, label: t("tx.tsChunk"), desc: t("tx.tsChunkDesc") },
+              { value: "word" as const, label: t("tx.tsWord"), desc: t("tx.tsWordDesc") },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setTimestampMode(opt.value)}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: timestampMode === opt.value
+                    ? "2px solid var(--accent)"
+                    : "1px solid var(--border)",
+                  background: timestampMode === opt.value
+                    ? "rgba(249, 115, 22, 0.1)"
+                    : "var(--surface)",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "all 0.2s",
+                }}
+              >
+                <div style={{
+                  fontWeight: 600,
+                  fontSize: "0.9rem",
+                  color: timestampMode === opt.value ? "var(--accent-light)" : "var(--text-primary)",
+                }}>{opt.label}</div>
+                <div style={{
+                  fontSize: "0.78rem",
+                  color: "var(--text-secondary)",
+                  marginTop: "2px",
+                }}>{opt.desc}</div>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Submit Button */}
