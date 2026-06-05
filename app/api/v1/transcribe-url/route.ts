@@ -7,19 +7,18 @@ import { createSupabaseAdmin } from "@/app/lib/supabase/admin";
 /**
  * POST /api/v1/transcribe-url
  * 
- * Alternative to /api/v1/transcribe for large files (>4.5MB).
- * Instead of uploading the audio file directly, the client provides a
- * publicly accessible URL to the audio file.
- * 
- * This bypasses Vercel's 4.5MB body size limit.
+ * Transcribe audio from a Supabase storage path or a public URL.
+ * Use this for files > 4.5MB that can't be uploaded directly to Vercel.
  * 
  * Accepts JSON body:
- * - audioUrl: string (required) — public URL to audio file
- * - fileName: string (optional) — original file name
+ * - storagePath: string — path in Supabase "audio-uploads" bucket (from /api/v1/upload)
+ * - audioUrl: string — OR a public URL to audio file (alternative to storagePath)
+ * - fileName: string (optional)
  * - language: string (optional, default "th")
  * - mode: "transcribe" | "align" (optional, default "transcribe")
  * - scriptText: string (required for align mode)
  * - timestampMode: "chunk" | "word" (optional, default "chunk")
+ * - durationHint: number (optional, seconds — used for credit estimation)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -54,7 +53,8 @@ export async function POST(request: NextRequest) {
     }
 
     const {
-      audioUrl,
+      storagePath,
+      audioUrl: rawAudioUrl,
       fileName = "api_upload.mp3",
       language = "th",
       mode = "transcribe",
@@ -62,7 +62,8 @@ export async function POST(request: NextRequest) {
       timestampMode = "chunk",
       durationHint,
     } = body as {
-      audioUrl: string;
+      storagePath?: string;
+      audioUrl?: string;
       fileName?: string;
       language?: string;
       mode?: string;
@@ -71,19 +72,39 @@ export async function POST(request: NextRequest) {
       durationHint?: number;
     };
 
-    if (!audioUrl) {
-      return NextResponse.json({ error: "Missing 'audioUrl' in request body" }, { status: 400 });
+    if (!storagePath && !rawAudioUrl) {
+      return NextResponse.json({ error: "Either 'storagePath' or 'audioUrl' is required" }, { status: 400 });
     }
 
     if (mode === "align" && !scriptText.trim()) {
       return NextResponse.json({ error: "scriptText is required for align mode" }, { status: 400 });
     }
 
-    // 3. Estimate duration & Check Credits
-    // If client provides durationHint (seconds), use it; otherwise estimate from a HEAD request
+    // 3. Resolve audio URL
+    let audioUrl = rawAudioUrl || "";
+
+    if (storagePath) {
+      // Create signed download URL from Supabase Storage (file must exist)
+      const supabase = createSupabaseAdmin();
+      if (!supabase) {
+        return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
+      }
+
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from("audio-uploads")
+        .createSignedUrl(storagePath, 3600); // 1 hour
+
+      if (signedUrlError || !signedUrlData?.signedUrl) {
+        console.error("[api/v1/transcribe-url] Failed to create signed URL:", signedUrlError);
+        return NextResponse.json({ error: "Failed to access uploaded file. Did you upload it first?" }, { status: 400 });
+      }
+
+      audioUrl = signedUrlData.signedUrl;
+    }
+
+    // 4. Estimate duration & Check Credits
     let durationSec = durationHint || 0;
     if (!durationSec) {
-      // Try HEAD request to get Content-Length for estimation
       try {
         const headResp = await fetch(audioUrl, { method: "HEAD" });
         const contentLength = parseInt(headResp.headers.get("content-length") || "0");
@@ -92,12 +113,10 @@ export async function POST(request: NextRequest) {
           durationSec = estimateAudioDuration(contentLength, contentType);
         }
       } catch {
-        // If HEAD fails, estimate 5 minutes as default
         durationSec = 300;
       }
     }
 
-    // Minimum 10 seconds to prevent abuse
     if (durationSec < 10) durationSec = 60;
 
     const creditsNeeded = calculateCredits(durationSec);
@@ -111,7 +130,7 @@ export async function POST(request: NextRequest) {
       }, { status: 402 });
     }
 
-    // 4. Create Job Record
+    // 5. Create Job Record
     const job = await prisma.job.create({
       data: {
         userId: user.id,
@@ -125,19 +144,19 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 5. Deduct Credits
+    // 6. Deduct Credits
     const deducted = await deductCredits(user.id, creditsNeeded, job.id, fileName);
     if (!deducted) {
       await prisma.job.update({ where: { id: job.id }, data: { status: "failed", errorMessage: "Credit deduction failed" } });
       return NextResponse.json({ error: "Credit deduction failed", creditsNeeded, balance }, { status: 402 });
     }
 
-    // 6. Run Process — use the audioUrl directly
+    // 7. Run Process
     const processResult = mode === "align"
       ? await runAlignment(audioUrl, scriptText, { language, timestampMode })
       : await runTranscription(audioUrl, { language, timestampMode });
 
-    // 7. Handle Result
+    // 8. Handle Result
     if (processResult.success && processResult.resultJson) {
       await prisma.job.update({
         where: { id: job.id },
@@ -147,6 +166,12 @@ export async function POST(request: NextRequest) {
           completedAt: new Date(),
         },
       });
+
+      // Clean up uploaded file (fire and forget)
+      if (storagePath) {
+        const supabase = createSupabaseAdmin();
+        supabase?.storage.from("audio-uploads").remove([storagePath]).catch(() => {});
+      }
 
       return NextResponse.json({
         success: true,
@@ -159,7 +184,7 @@ export async function POST(request: NextRequest) {
       // Refund on failure
       const { addCredits } = await import("@/app/lib/credits");
       await addCredits(user.id, creditsNeeded, "refund", `Refund API: ${fileName} (failed)`);
-      
+
       await prisma.job.update({
         where: { id: job.id },
         data: {

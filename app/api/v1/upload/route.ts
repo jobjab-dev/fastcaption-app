@@ -13,10 +13,10 @@ import crypto from "crypto";
  * Flow:
  * 1. Client calls POST /api/v1/upload → gets { uploadUrl, storagePath }
  * 2. Client uploads file to uploadUrl via PUT
- * 3. Client calls POST /api/v1/transcribe-url with the signed download URL
+ * 3. Client calls POST /api/v1/transcribe-url with { storagePath }
  * 
  * Request JSON: { fileName: string }
- * Response: { uploadUrl: string, storagePath: string, downloadUrl: string }
+ * Response: { uploadUrl: string, uploadToken: string, storagePath: string }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -67,23 +67,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create upload URL" }, { status: 500 });
     }
 
-    // 6. Also create a signed download URL (valid for 1 hour)
-    // We pre-create this so the client can pass it to transcribe-url later
-    const { data: downloadData, error: downloadError } = await supabase.storage
-      .from("audio-uploads")
-      .createSignedUrl(storagePath, 3600);
-
-    if (downloadError || !downloadData) {
-      console.error("[api/v1/upload] Failed to create download URL:", downloadError);
-      return NextResponse.json({ error: "Failed to create download URL" }, { status: 500 });
-    }
-
     return NextResponse.json({
       uploadUrl: uploadData.signedUrl,
       uploadToken: uploadData.token,
       storagePath,
-      downloadUrl: downloadData.signedUrl,
-      expiresIn: 600, // upload URL valid for 10 minutes
+      expiresIn: 600,
     });
 
   } catch (error) {
