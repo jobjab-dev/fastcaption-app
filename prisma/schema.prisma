@@ -22,6 +22,7 @@ model User {
   createdAt       DateTime  @default(now())
   jobs            Job[]
   transactions    Transaction[]
+  apiKeys         ApiKey[]
 
   // Affiliate fields
   referralCode    String?   @unique
@@ -125,4 +126,18 @@ model AdRewardLog {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+// ═══ API KEYS (For external bot/API access) ═══
+
+model ApiKey {
+  id        String    @id @default(cuid())
+  key       String    @unique
+  name      String    @default("Default Key")
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  lastUsed  DateTime?
+
+  @@index([userId])
 }

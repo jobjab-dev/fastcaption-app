@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
       id: pkg.id,
       name: pkg.name,
       credits: pkg.credits,
+      originalCredits: pkg.originalCredits,
       description: isThai ? pkg.descTh : pkg.description,
       popular: pkg.popular,
       currency: price.currency,

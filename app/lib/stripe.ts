@@ -14,47 +14,51 @@ export function getStripe(): Stripe {
 
 // --- Credit Packages (fixed prices in THB and USD) ---
 
+// 🔥 PROMO: 5x credits — originalCredits shows pre-promo amount for strikethrough UI
 export const CREDIT_PACKAGES = [
   {
     id: "starter",
     name: "Starter",
-    credits: 10000,
+    credits: 50000,          // 5x promo (was 10,000)
+    originalCredits: 10000,  // for strikethrough display
     priceThb: 99,
     priceUsd: 2.99,
     // Crypto / Omise discount (10% off)
     discountThb: 89,
     discountUsd: 2.69,
     discountLabel: "10%",
-    description: "≈ 50 min",
-    descTh: "≈ 50 นาที",
+    description: "≈ 4 hrs",
+    descTh: "≈ 4 ชั่วโมง",
     popular: false,
   },
   {
     id: "pro",
     name: "Pro",
-    credits: 50000,
+    credits: 250000,         // 5x promo (was 50,000)
+    originalCredits: 50000,  // for strikethrough display
     priceThb: 399,
     priceUsd: 9.99,
     // Crypto / Omise discount (10% off)
     discountThb: 359,
     discountUsd: 8.99,
     discountLabel: "10%",
-    description: "≈ 4 hrs",
-    descTh: "≈ 4 ชั่วโมง",
+    description: "≈ 20 hrs",
+    descTh: "≈ 20 ชั่วโมง",
     popular: true,
   },
   {
     id: "business",
     name: "Business",
-    credits: 200000,
+    credits: 1000000,         // 5x promo (was 200,000)
+    originalCredits: 200000,  // for strikethrough display
     priceThb: 1299,
     priceUsd: 29.99,
     // Crypto / Omise discount (10% off)
     discountThb: 1169,
     discountUsd: 26.99,
     discountLabel: "10%",
-    description: "≈ 16 hrs",
-    descTh: "≈ 16 ชั่วโมง",
+    description: "≈ 83 hrs",
+    descTh: "≈ 83 ชั่วโมง",
     popular: false,
   },
 ] as const;

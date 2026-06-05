@@ -8,6 +8,7 @@ interface PricingPackage {
   id: string;
   name: string;
   credits: number;
+  originalCredits: number;
   description: string;
   popular: boolean;
   currency: string;
@@ -789,8 +790,36 @@ export default function PricingPage() {
                   {pkg.popular && <div className="popular-badge">{t("price.popular")}</div>}
 
                   <h3 style={{ fontSize: "1.3rem", fontWeight: 700 }}>{pkg.name}</h3>
-                  <div className="credits-amount">
-                    {pkg.credits.toLocaleString()} credits
+                  {/* 🔥 5x Promo Badge */}
+                  <div style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: "linear-gradient(135deg, #ff4d4d, #ff6b35)",
+                    color: "#fff",
+                    padding: "4px 12px",
+                    borderRadius: "20px",
+                    fontSize: "0.75rem",
+                    fontWeight: 800,
+                    letterSpacing: "0.5px",
+                    marginBottom: "8px",
+                    animation: "promoPulse 2s ease-in-out infinite",
+                    boxShadow: "0 2px 12px rgba(255,77,77,0.3)",
+                  }}>
+                    🔥 x5 PROMO
+                  </div>
+                  <div className="credits-amount" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                    <span style={{
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      textDecoration: "line-through",
+                      opacity: 0.6,
+                    }}>
+                      {pkg.originalCredits.toLocaleString()} credits
+                    </span>
+                    <span style={{ color: "var(--accent-light)", fontWeight: 800 }}>
+                      {pkg.credits.toLocaleString()} credits
+                    </span>
                   </div>
                   <div className="price">
                     {activeTab === "crypto" ? (

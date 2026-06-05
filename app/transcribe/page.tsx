@@ -63,6 +63,7 @@ export default function TranscribePage() {
   const [maxChars, setMaxChars] = useState(16);
   const [assGenerating, setAssGenerating] = useState(false);
   const [timestampMode, setTimestampMode] = useState<"chunk" | "word">("chunk");
+  const [subtitleFormat, setSubtitleFormat] = useState<"ass" | "srt">("ass");
 
   // Conversion state
   const [convertProgress, setConvertProgress] = useState<ConvertProgress | null>(null);
@@ -336,6 +337,57 @@ export default function TranscribePage() {
       setMessage(t("tx.assDownloadError", { error: String(err) }));
     } finally {
       setAssGenerating(false);
+    }
+  };
+
+  // SRT from JSON source (job or uploaded file)
+  const handleDownloadSrtFromSource = async (source: "job" | "upload") => {
+    setAssGenerating(true);
+    try {
+      let data: { segments: Array<{ start: number; end: number; text: string }> };
+
+      if (source === "job" && result) {
+        const res = await fetch(`/api/jobs/${result.jobId}`, { method: "POST" });
+        if (!res.ok) throw new Error("Download failed");
+        data = await res.json();
+      } else if (source === "upload" && jsonFile) {
+        const text = await jsonFile.text();
+        data = JSON.parse(text);
+      } else {
+        setMessage(t("tx.unsupported", { ext: "none" }));
+        return;
+      }
+
+      if (!data?.segments) { setMessage(t("tx.noSegments")); return; }
+
+      const srt = data.segments.map((seg, i) => {
+        const fmt = (s: number) => {
+          const h = Math.floor(s / 3600);
+          const m = Math.floor((s % 3600) / 60);
+          const sec = Math.floor(s % 60);
+          const ms = Math.round((s % 1) * 1000);
+          return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+        };
+        return `${i + 1}\n${fmt(seg.start)} --> ${fmt(seg.end)}\n${seg.text}\n`;
+      }).join("\n");
+
+      const name = source === "upload" && jsonFile
+        ? jsonFile.name.replace(/\.json$/i, "")
+        : baseName();
+      triggerDownload(srt, `${name}.srt`);
+    } catch (err) {
+      setMessage(t("tx.assDownloadError", { error: String(err) }));
+    } finally {
+      setAssGenerating(false);
+    }
+  };
+
+  // Unified handler for subtitle generation (ASS or SRT)
+  const handleGenerateSubtitle = (source: "job" | "upload") => {
+    if (subtitleFormat === "srt") {
+      handleDownloadSrtFromSource(source);
+    } else {
+      handleDownloadAss(source);
     }
   };
 
@@ -649,15 +701,40 @@ export default function TranscribePage() {
           </div>
         )}
 
-        {/* ─── ASS Subtitle Section ─── */}
+        {/* ─── Subtitle Generator Section ─── */}
         <div style={{
           marginTop: "32px",
           paddingTop: "24px",
           borderTop: "1px solid var(--border)",
         }}>
-          <h2 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>{t("tx.assTitle")}</h2>
+          <h2 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>{t("tx.subtitleTitle")}</h2>
 
-          {/* ASS Mode */}
+          {/* Format Toggle: ASS / SRT */}
+          <div style={{ marginBottom: "16px" }}>
+            <label className="form-label">{t("tx.subtitleFormat")}</label>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                className={`btn ${subtitleFormat === "ass" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setSubtitleFormat("ass")}
+                style={{ flex: 1 }}
+              >
+                🎬 ASS
+              </button>
+              <button
+                className={`btn ${subtitleFormat === "srt" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setSubtitleFormat("srt")}
+                style={{ flex: 1 }}
+              >
+                📝 SRT
+              </button>
+            </div>
+            <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "6px" }}>
+              {subtitleFormat === "ass" ? t("tx.assFormatDesc") : t("tx.srtFormatDesc")}
+            </div>
+          </div>
+
+          {/* ASS Mode — only show for ASS format */}
+          {subtitleFormat === "ass" && (
           <div style={{ marginBottom: "16px" }}>
             <label className="form-label">{t("tx.assMode")}</label>
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -692,8 +769,10 @@ export default function TranscribePage() {
               ))}
             </div>
           </div>
+          )}
 
-          {/* Orientation */}
+          {/* Orientation — only show for ASS format */}
+          {subtitleFormat === "ass" && (
           <div style={{ marginBottom: "16px" }}>
             <label className="form-label">{t("tx.assOrientation")}</label>
             <div style={{ display: "flex", gap: "8px" }}>
@@ -716,9 +795,11 @@ export default function TranscribePage() {
               {orientation === "landscape" ? t("tx.orientLandscapeDesc") : t("tx.orientPortraitDesc")}
             </div>
           </div>
+          )}
 
           {/* MaxChars Slider */}
-          {assMode !== "word" && (
+          {/* MaxChars Slider — only show for ASS format with non-word mode */}
+          {subtitleFormat === "ass" && assMode !== "word" && (
             <div style={{ marginBottom: "16px" }}>
               <label className="form-label">{t("tx.maxCharsLabel")}</label>
               <div style={{
@@ -863,17 +944,19 @@ export default function TranscribePage() {
             </div>
           )}
 
-          {/* ASS Generate Button — auto source detection */}
+          {/* Subtitle Generate Button — auto source detection */}
           {((status === "done" && result) || jsonFile) && (
             <button
               className="btn btn-primary btn-lg"
               style={{ width: "100%", marginTop: "8px" }}
-              onClick={() => handleDownloadAss(status === "done" && result ? "job" : "upload")}
+              onClick={() => handleGenerateSubtitle(status === "done" && result ? "job" : "upload")}
               disabled={assGenerating}
             >
               {assGenerating
-                ? <><span className="spinner" /> {t("tx.assGeneratingLong")}</>
-                : status === "done" && result ? t("tx.assBtn") : t("tx.assBtnFile", { name: jsonFile?.name || "" })
+                ? <><span className="spinner" /> {t("tx.subtitleGenerating", { fmt: subtitleFormat.toUpperCase() })}</>
+                : status === "done" && result
+                  ? t("tx.subtitleBtn", { fmt: subtitleFormat.toUpperCase() })
+                  : t("tx.subtitleBtnFile", { fmt: subtitleFormat.toUpperCase(), name: jsonFile?.name || "" })
               }
             </button>
           )}

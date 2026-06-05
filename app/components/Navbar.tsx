@@ -12,6 +12,7 @@ const navLinks = [
   { href: "/transcribe", label: "Transcribe" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/pricing", label: "Pricing" },
+  { href: "/api-docs", label: "API" },
   { href: "/affiliate", label: "Affiliate" },
 ];
 

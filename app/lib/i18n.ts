@@ -209,6 +209,13 @@ export const translations: Record<Locale, Record<string, string>> = {
     "tx.tsChunkDesc": "Averaged — faster, good for most cases",
     "tx.tsWord": "Word-level",
     "tx.tsWordDesc": "Character-level — more accurate timing",
+    "tx.subtitleTitle": "🎬 Subtitle Generator",
+    "tx.subtitleFormat": "Subtitle Format",
+    "tx.assFormatDesc": "ASS — TikTok-style with word highlighting, colors & animations",
+    "tx.srtFormatDesc": "SRT — standard subtitle format, works everywhere (YouTube, Premiere, etc.)",
+    "tx.subtitleBtn": "✨ Generate {fmt} Subtitle",
+    "tx.subtitleBtnFile": "✨ Generate {fmt} Subtitle — {name}",
+    "tx.subtitleGenerating": "Generating {fmt}...",
 
     // ── Affiliate ──
     "aff.title": "Affiliate Program",
@@ -441,6 +448,13 @@ export const translations: Record<Locale, Record<string, string>> = {
     "tx.tsChunkDesc": "เฉลี่ยเวลา — เร็วกว่า เหมาะกับงานทั่วไป",
     "tx.tsWord": "Word-level",
     "tx.tsWordDesc": "ระดับตัวอักษร — เวลาแม่นยำกว่า",
+    "tx.subtitleTitle": "🎬 Subtitle Generator",
+    "tx.subtitleFormat": "รูปแบบซับไทเทิล",
+    "tx.assFormatDesc": "ASS — สไตล์ TikTok พร้อม word highlighting, สี และ animation",
+    "tx.srtFormatDesc": "SRT — ฟอร์แมตมาตรฐาน ใช้ได้ทุกที่ (YouTube, Premiere ฯลฯ)",
+    "tx.subtitleBtn": "✨ สร้าง {fmt} Subtitle",
+    "tx.subtitleBtnFile": "✨ สร้าง {fmt} Subtitle — {name}",
+    "tx.subtitleGenerating": "กำลังสร้าง {fmt}...",
 
     // ── Affiliate ──
     "aff.title": "Affiliate Program",

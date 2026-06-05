@@ -88,9 +88,12 @@ export default async function DashboardPage() {
             <div className="stat-label">{t("dash.creditsUsed")}</div>
             <div className="stat-value">{totalCreditsUsed.toLocaleString()}</div>
           </div>
-          <div className="stat-card" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div className="stat-card" style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: "8px" }}>
             <Link href="/transcribe" className="btn btn-primary" style={{ width: "100%" }}>
               {t("dash.newTranscribe")}
+            </Link>
+            <Link href="/dashboard/api-keys" className="btn btn-secondary" style={{ width: "100%", fontSize: "0.9rem" }}>
+              Manage API Keys
             </Link>
           </div>
         </div>
