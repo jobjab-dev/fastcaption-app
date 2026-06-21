@@ -606,6 +606,31 @@ export function buildCaptionsWordByWord(words: ExtractedWord[]): Caption[] {
   return caps;
 }
 
+/**
+ * Post-process: merge orphan captions (very short lines like "repeat." or "forever.")
+ * back into the previous caption line, if combined length fits within limit.
+ */
+function mergeOrphanCaptions(caps: Caption[], maxChars: number): Caption[] {
+  if (caps.length <= 1) return caps;
+  const merged: Caption[] = [];
+  for (const cap of caps) {
+    const text = cap[2].trim();
+    const wordCount = text.split(/\s+/).length;
+    // Orphan = 1-2 words AND short text
+    if (merged.length > 0 && wordCount <= 2 && text.length <= 12) {
+      const prev = merged[merged.length - 1];
+      const combinedText = prev[2] + " " + text;
+      // Merge if combined length is reasonable (up to 1.3x maxChars)
+      if (combinedText.length <= maxChars * 1.3) {
+        merged[merged.length - 1] = [prev[0], cap[1], combinedText];
+        continue;
+      }
+    }
+    merged.push([...cap] as Caption);
+  }
+  return merged;
+}
+
 export function buildCaptionsByPause(
   words: ExtractedWord[],
   pauseThreshold = 0.3,
@@ -663,7 +688,8 @@ export function buildCaptionsByPause(
     }
   }
 
-  return caps;
+  // Post-process: merge orphan captions (≤ 1 word) back into previous line
+  return mergeOrphanCaptions(caps, maxChars);
 }
 
 /**
@@ -728,7 +754,7 @@ export async function buildCaptionsByPauseAI(
         console.warn(`[ass] ⚠️ AI caption char coverage too low: ${totalCaptionChars}/${totalWordChars} (${(charCoverage * 100).toFixed(1)}%). Falling back.`);
       } else {
         console.log(`[ass] AI segmentation: ${caps.length} captions (char coverage: ${(charCoverage * 100).toFixed(1)}%)`);
-        return caps;
+        return mergeOrphanCaptions(caps, maxChars);
       }
     }
   }

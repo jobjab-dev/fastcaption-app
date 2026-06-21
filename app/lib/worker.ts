@@ -228,7 +228,7 @@ export async function runAlignment(
 ): Promise<TranscriptionResult> {
   console.log(`[align] Starting forced alignment (script: ${scriptText.length} chars)`);
 
-  // Step 1: Get transcription with word timestamps
+  // Step 1: Get transcription with word timestamps from Whisper
   const result = await runTranscription(audioUrl, options);
   if (!result.success || !result.resultJson) return result;
 
@@ -249,50 +249,43 @@ export async function runAlignment(
       return result;
     }
 
-    // Step 2: Build character-level timeline from transcription words
-    const charTimeline = buildCharTimeline(segments);
-    console.log(`[align] Character timeline: ${charTimeline.length} chars from transcription`);
+    // Step 2: Extract all Whisper words with their REAL timestamps
+    const whisperWords: Array<{ word: string; start: number; end: number }> = [];
+    for (const seg of segments) {
+      if (seg.words && seg.words.length > 0) {
+        for (const w of seg.words) {
+          whisperWords.push({ word: w.word, start: w.start, end: w.end });
+        }
+      }
+    }
 
-    if (charTimeline.length === 0) {
-      console.warn("[align] Empty char timeline, returning raw transcription");
+    if (whisperWords.length === 0) {
+      console.warn("[align] No words from Whisper, returning raw transcription");
       return result;
     }
 
-    // Step 3: Clean script (remove whitespace for matching)
-    const scriptClean = scriptText.split("").filter(ch => ch.trim()).join("");
-    console.log(`[align] Script clean: ${scriptClean.length} chars (from ${scriptText.length})`);
+    console.log(`[align] Whisper words: ${whisperWords.length}, Script words: ${scriptText.split(/\s+/).filter(w => w).length}`);
 
-    // Step 4: Align script to transcription using LCS
-    const scriptTimestamps = alignScriptToTimeline(scriptClean, charTimeline);
+    // Step 3: Simple word-to-word matching — use Whisper timestamps directly
+    const scriptWords = scriptText.split(/\s+/).filter(w => w);
+    const alignedSegments = alignWordToWord(scriptWords, whisperWords);
 
-    // Step 4b: Reassign timestamps by chunk boundaries to preserve real speech gaps
-    // LCS interpolation destroys gaps between Whisper chunks — this restores them
-    const chunkBoundaries = segments.map(s => ({ start: s.start, end: s.end }));
-    const { adjustedTimestamps, chunkAssignments } = reassignByChunkBoundaries(
-      scriptTimestamps, chunkBoundaries
-    );
-    console.log(`[align] Chunk-aware reassignment: ${chunkBoundaries.length} chunk boundaries preserved`);
+    console.log(`[align] ✅ Aligned: ${alignedSegments.length} segments (word-level, Whisper timestamps)`);
 
-    // Step 5: Build aligned output (split by chunk boundaries, not newlines)
-    const alignedOutput = buildAlignedOutput(scriptText, adjustedTimestamps, chunkAssignments, data.language || options.language) as {
-      segments: Array<{ words?: unknown[] }>;
-      [key: string]: unknown;
+    const alignedOutput: Record<string, unknown> = {
+      segments: alignedSegments,
+      language: data.language || options.language,
+      original_script: scriptText,
+      alignment_model: result.modelUsed,
     };
-
-    const totalWords = alignedOutput.segments.reduce((sum: number, s: { words?: unknown[] }) => sum + (s.words?.length || 0), 0);
-    console.log(`[align] ✅ Aligned: ${alignedOutput.segments.length} segments, ${totalWords} chars with timestamps`);
-
-    alignedOutput.original_script = scriptText;
-    alignedOutput.alignment_model = result.modelUsed;
 
     return {
       ...result,
       resultJson: JSON.stringify(alignedOutput, null, 2),
-      segments: alignedOutput.segments.length,
+      segments: alignedSegments.length,
     };
   } catch (error) {
     console.error("[align] Alignment failed, returning raw transcription:", error);
-    // Fallback: return raw transcription with script attached
     try {
       const data = JSON.parse(result.resultJson);
       data.original_script = scriptText;
@@ -300,6 +293,149 @@ export async function runAlignment(
     } catch { /* ignore */ }
     return result;
   }
+}
+
+/**
+ * Simple word-to-word alignment: match script words to Whisper words
+ * and use Whisper's REAL timestamps. No LCS, no interpolation, no guessing.
+ *
+ * Algorithm: greedy two-pointer matching on cleaned words.
+ * - If script word matches Whisper word → use Whisper timestamp
+ * - If not matched → interpolate between nearest matched neighbors
+ */
+function alignWordToWord(
+  scriptWords: string[],
+  whisperWords: Array<{ word: string; start: number; end: number }>
+): Array<{ start: number; end: number; text: string; words: Array<{ word: string; start: number; end: number }> }> {
+
+  const clean = (w: string) => w.replace(/[^a-zA-Z0-9\u0E00-\u0E7F]/g, '').toLowerCase();
+
+  // Pre-process: split script words on em-dash/long dash into sub-words
+  // e.g. "universes—like" → [{text: "universes—like", sub: ["universes", "like"], origIdx: 140}]
+  interface ScriptEntry { text: string; subs: string[]; origIdx: number }
+  const scriptEntries: ScriptEntry[] = [];
+  for (let i = 0; i < scriptWords.length; i++) {
+    const w = scriptWords[i];
+    // Split on em-dash (—), en-dash (–), and double-hyphen (--)
+    const parts = w.split(/\u2014|\u2013|--/).filter(p => p.trim());
+    if (parts.length > 1) {
+      scriptEntries.push({ text: w, subs: parts.map(p => clean(p)), origIdx: i });
+    } else {
+      scriptEntries.push({ text: w, subs: [clean(w)], origIdx: i });
+    }
+  }
+
+  // Flatten: each sub-word gets its own slot for matching
+  interface FlatEntry { origIdx: number; subIdx: number; cleanWord: string }
+  const flatScript: FlatEntry[] = [];
+  for (const entry of scriptEntries) {
+    for (let si = 0; si < entry.subs.length; si++) {
+      if (entry.subs[si]) {
+        flatScript.push({ origIdx: entry.origIdx, subIdx: si, cleanWord: entry.subs[si] });
+      }
+    }
+  }
+
+  // Greedy match on flat list
+  const flatMatched: Array<{ flatIdx: number; whisperIdx: number }> = [];
+  let wi = 0;
+  for (let fi = 0; fi < flatScript.length && wi < whisperWords.length; fi++) {
+    const sw = flatScript[fi].cleanWord;
+    if (!sw) continue;
+
+    // Look ahead up to 5 Whisper words for a match
+    let found = false;
+    for (let look = 0; look < 5 && wi + look < whisperWords.length; look++) {
+      const ww = clean(whisperWords[wi + look].word);
+      if (sw === ww) {
+        flatMatched.push({ flatIdx: fi, whisperIdx: wi + look });
+        wi = wi + look + 1;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      // Also try: does the next flat script word match current whisper word?
+      // If so, skip this script word (Whisper didn't catch it) but don't advance wi
+    }
+  }
+
+  console.log(`[align-word] Flat matched ${flatMatched.length}/${flatScript.length} sub-words to Whisper`);
+
+  // Map flat matches back to original script word indices
+  // For compound words (em-dash), use first sub-word's start and last sub-word's end
+  const origTimestamps: Array<{ start: number; end: number } | null> = new Array(scriptWords.length).fill(null);
+  for (const fm of flatMatched) {
+    const origIdx = flatScript[fm.flatIdx].origIdx;
+    const ww = whisperWords[fm.whisperIdx];
+    const existing = origTimestamps[origIdx];
+    if (!existing) {
+      origTimestamps[origIdx] = { start: ww.start, end: ww.end };
+    } else {
+      // Expand range (for compound words like "universes—like")
+      origTimestamps[origIdx] = {
+        start: Math.min(existing.start, ww.start),
+        end: Math.max(existing.end, ww.end),
+      };
+    }
+  }
+
+  // Use origTimestamps (already built from flatMatched above) as the base
+  const timestamps = origTimestamps;
+
+  // Interpolate unmatched words between matched neighbors
+  for (let i = 0; i < scriptWords.length; i++) {
+    if (timestamps[i]) continue;
+
+    // Find previous and next matched
+    let prevIdx = -1, nextIdx = -1;
+    for (let p = i - 1; p >= 0; p--) { if (timestamps[p]) { prevIdx = p; break; } }
+    for (let n = i + 1; n < scriptWords.length; n++) { if (timestamps[n]) { nextIdx = n; break; } }
+
+    if (prevIdx >= 0 && nextIdx >= 0) {
+      // Interpolate between prev and next
+      const prevEnd = timestamps[prevIdx]!.end;
+      const nextStart = timestamps[nextIdx]!.start;
+      const gapCount = nextIdx - prevIdx - 1;
+      const pos = i - prevIdx;
+      const step = (nextStart - prevEnd) / (gapCount + 1);
+      timestamps[i] = {
+        start: Math.round((prevEnd + (pos - 1) * step) * 1000) / 1000,
+        end: Math.round((prevEnd + pos * step) * 1000) / 1000,
+      };
+    } else if (prevIdx >= 0) {
+      // After last match — extend slightly
+      const prevEnd = timestamps[prevIdx]!.end;
+      const pos = i - prevIdx;
+      timestamps[i] = { start: prevEnd + (pos - 1) * 0.3, end: prevEnd + pos * 0.3 };
+    } else if (nextIdx >= 0) {
+      // Before first match
+      const nextStart = timestamps[nextIdx]!.start;
+      const pos = nextIdx - i;
+      timestamps[i] = { start: Math.max(0, nextStart - pos * 0.3), end: Math.max(0, nextStart - (pos - 1) * 0.3) };
+    } else {
+      // No matches at all — shouldn't happen
+      timestamps[i] = { start: i * 0.3, end: (i + 1) * 0.3 };
+    }
+  }
+
+  // Build output: 1 segment per script word (same format as before)
+  const segments: Array<{
+    start: number; end: number; text: string;
+    words: Array<{ word: string; start: number; end: number }>;
+  }> = [];
+
+  for (let i = 0; i < scriptWords.length; i++) {
+    const ts = timestamps[i]!;
+    segments.push({
+      start: ts.start,
+      end: ts.end,
+      text: scriptWords[i],
+      words: [{ word: scriptWords[i], start: ts.start, end: ts.end }],
+    });
+  }
+
+  return segments;
 }
 
 // ─── Alignment Helpers (ported from align_worker.py) ──────────────────────
@@ -470,6 +606,9 @@ function alignScriptToTimeline(
  * destroying real speech pauses. This function re-assigns each char to its
  * original Whisper chunk and distributes timestamps proportionally within
  * each chunk, preserving the real gaps between chunks.
+ *
+ * Handles edge cases: zero-duration chunks, compressed chunks (too many
+ * chars in too little time), and backward timestamps.
  */
 function reassignByChunkBoundaries(
   timestamps: Array<[number, number]>,
@@ -480,6 +619,28 @@ function reassignByChunkBoundaries(
     return { adjustedTimestamps: [...timestamps], chunkAssignments: new Array(n).fill(0) };
   }
 
+  // ── Pre-process: fix bad chunks (zero-duration, backward, compressed) ──
+  const fixedChunks = chunks.map((c, i) => ({ start: c.start, end: c.end }));
+
+  // Fix backward chunks (start > previous end)
+  for (let i = 1; i < fixedChunks.length; i++) {
+    if (fixedChunks[i].start < fixedChunks[i - 1].end - 0.01) {
+      fixedChunks[i].start = fixedChunks[i - 1].end;
+    }
+  }
+
+  // Calculate average speech rate from good chunks (chars/sec)
+  // We'll use this to estimate duration for bad chunks
+  let goodTotalDur = 0;
+  let goodTotalChars = 0;
+  for (const chunk of fixedChunks) {
+    const dur = chunk.end - chunk.start;
+    if (dur > 0.1) {
+      goodTotalDur += dur;
+      goodTotalChars += 1; // will be weighted by actual char count later
+    }
+  }
+
   const chunkAssignments = new Array(n).fill(0);
 
   // Step 1: Assign each char to its chunk based on timestamp midpoint
@@ -487,15 +648,15 @@ function reassignByChunkBoundaries(
     const mid = (timestamps[i][0] + timestamps[i][1]) / 2;
     let bestChunk = 0;
     let bestDist = Infinity;
-    for (let c = 0; c < chunks.length; c++) {
-      if (mid >= chunks[c].start && mid <= chunks[c].end) {
+    for (let c = 0; c < fixedChunks.length; c++) {
+      if (mid >= fixedChunks[c].start && mid <= fixedChunks[c].end) {
         bestChunk = c;
         bestDist = 0;
         break;
       }
       const dist = Math.min(
-        Math.abs(mid - chunks[c].start),
-        Math.abs(mid - chunks[c].end)
+        Math.abs(mid - fixedChunks[c].start),
+        Math.abs(mid - fixedChunks[c].end)
       );
       if (dist < bestDist) {
         bestDist = dist;
@@ -506,36 +667,95 @@ function reassignByChunkBoundaries(
   }
 
   // Step 2: Ensure monotonically non-decreasing chunk assignments
-  // LCS guarantees order, but gap chars might fluctuate — enforce monotonic
   for (let i = 1; i < n; i++) {
     if (chunkAssignments[i] < chunkAssignments[i - 1]) {
       chunkAssignments[i] = chunkAssignments[i - 1];
     }
   }
 
-  // Step 3: Redistribute timestamps proportionally within each chunk
+  // Step 3: Calculate avg chars/sec from good groups (for estimating bad ones)
+  const groupInfo: Array<{ start: number; end: number; size: number; chunkIdx: number }> = [];
+  let gs = 0;
+  while (gs < n) {
+    const chunk = chunkAssignments[gs];
+    let ge = gs + 1;
+    while (ge < n && chunkAssignments[ge] === chunk) ge++;
+    const seg = fixedChunks[chunk];
+    if (seg) {
+      groupInfo.push({ start: seg.start, end: seg.end, size: ge - gs, chunkIdx: chunk });
+    }
+    gs = ge;
+  }
+
+  let avgCharDur = 0.065; // default ~15 chars/sec
+  {
+    let goodChars = 0;
+    let goodDur = 0;
+    for (const g of groupInfo) {
+      const dur = g.end - g.start;
+      const charsPerSec = g.size > 0 && dur > 0 ? g.size / dur : 0;
+      if (dur > 0.05 && charsPerSec < 30 && charsPerSec > 2) {
+        goodChars += g.size;
+        goodDur += dur;
+      }
+    }
+    if (goodChars > 0 && goodDur > 0) {
+      avgCharDur = goodDur / goodChars;
+    }
+  }
+
+  // Step 4: Redistribute timestamps — handle bad chunks
   const adjustedTimestamps: Array<[number, number]> = new Array(n)
     .fill(null)
     .map(() => [-1, -1] as [number, number]);
 
   let groupStart = 0;
+  let lastEnd = 0; // track last assigned end time for monotonic guarantee
+
   while (groupStart < n) {
     const chunk = chunkAssignments[groupStart];
     let groupEnd = groupStart + 1;
     while (groupEnd < n && chunkAssignments[groupEnd] === chunk) groupEnd++;
 
     const groupSize = groupEnd - groupStart;
-    const seg = chunks[chunk];
+    const seg = fixedChunks[chunk];
+
     if (seg) {
-      const charDur = (seg.end - seg.start) / groupSize;
+      let segStart = Math.max(seg.start, lastEnd); // ensure no backward
+      let segEnd = seg.end;
+      let segDur = segEnd - segStart;
+
+      // Check if chunk is bad: zero-duration or compressed
+      const isBad = segDur <= 0 || (groupSize > 3 && groupSize / segDur > 30);
+
+      if (isBad) {
+        // Estimate proper duration from speech rate
+        const estimatedDur = groupSize * avgCharDur;
+        segStart = lastEnd; // start right after previous group
+        segEnd = segStart + estimatedDur;
+        segDur = estimatedDur;
+      }
+
+      const charDur = segDur / groupSize;
       for (let g = 0; g < groupSize; g++) {
         adjustedTimestamps[groupStart + g] = [
-          Math.round((seg.start + g * charDur) * 1000) / 1000,
-          Math.round((seg.start + (g + 1) * charDur) * 1000) / 1000,
+          Math.round((segStart + g * charDur) * 1000) / 1000,
+          Math.round((segStart + (g + 1) * charDur) * 1000) / 1000,
         ];
       }
+      lastEnd = Math.round((segStart + groupSize * charDur) * 1000) / 1000;
     }
     groupStart = groupEnd;
+  }
+
+  // Step 5: Ensure monotonic timestamps (safety net)
+  for (let i = 1; i < n; i++) {
+    if (adjustedTimestamps[i][0] < adjustedTimestamps[i - 1][1]) {
+      adjustedTimestamps[i] = [
+        adjustedTimestamps[i - 1][1],
+        Math.max(adjustedTimestamps[i][1], adjustedTimestamps[i - 1][1] + 0.001),
+      ];
+    }
   }
 
   return { adjustedTimestamps, chunkAssignments };
@@ -543,6 +763,7 @@ function reassignByChunkBoundaries(
 
 /** Build aligned output as segments split by chunk boundaries.
  *  Each Whisper chunk becomes a separate segment, preserving real speech gaps.
+ *  Words are grouped by whitespace boundaries (not per-character).
  */
 function buildAlignedOutput(
   scriptText: string,
@@ -560,45 +781,72 @@ function buildAlignedOutput(
   let currentWords: Array<{ word: string; start: number; end: number }> = [];
   let currentText = '';
 
+  // Word accumulator — collects characters into a single word
+  let wordChars = '';
+  let wordStart = -1;
+  let wordEnd = -1;
+
+  function flushWord() {
+    if (wordChars && wordStart >= 0) {
+      currentWords.push({
+        word: wordChars,
+        start: Math.round(wordStart * 1000) / 1000,
+        end: Math.round(wordEnd * 1000) / 1000,
+      });
+      wordChars = '';
+      wordStart = -1;
+      wordEnd = -1;
+    }
+  }
+
   function flushSegment() {
+    // DON'T flush pending word — it may span a chunk boundary
+    // (e.g. "s" from "space" at end of chunk, "pace" at start of next)
     if (currentWords.length > 0) {
+      // Remove pending wordChars from the text before saving
+      const textToSave = wordChars
+        ? currentText.slice(0, currentText.length - wordChars.length).trim()
+        : currentText.trim();
       segments.push({
         start: currentWords[0].start,
         end: currentWords[currentWords.length - 1].end,
-        text: currentText.trim(),
+        text: textToSave,
         words: [...currentWords],
       });
     }
     currentWords = [];
-    currentText = '';
+    currentText = wordChars; // carry over pending chars to new segment
   }
 
   for (const ch of scriptText) {
     if (ch.trim() && cleanIdx < scriptTimestamps.length) {
       const chunk = chunkAssignments[cleanIdx];
 
-      // If chunk changed, flush current segment (creates gap between chunks)
+      // If chunk changed, flush segment (but keep pending word for new segment)
       if (chunk !== currentChunk && currentWords.length > 0) {
         flushSegment();
       }
       currentChunk = chunk;
 
-      currentWords.push({
-        word: ch,
-        start: Math.round(scriptTimestamps[cleanIdx][0] * 1000) / 1000,
-        end: Math.round(scriptTimestamps[cleanIdx][1] * 1000) / 1000,
-      });
+      // Accumulate character into current word
+      if (wordStart < 0) {
+        wordStart = scriptTimestamps[cleanIdx][0];
+      }
+      wordEnd = scriptTimestamps[cleanIdx][1];
+      wordChars += ch;
       currentText += ch;
       cleanIdx++;
     } else if (!ch.trim()) {
-      // Whitespace: include in current segment text for display
+      // Whitespace = word boundary → flush accumulated word
+      flushWord();
       if (currentWords.length > 0) {
         currentText += ch;
       }
     }
   }
 
-  // Flush final segment
+  // Flush final word + segment
+  flushWord();
   flushSegment();
 
   return { segments, language };
