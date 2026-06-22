@@ -255,68 +255,99 @@ export async function runAlignment(
     const useCharLevel = charLevelLangs.some(l => lang.startsWith(l));
 
     if (useCharLevel) {
-      // ── Character-level LCS alignment (Thai/CJK) ──
-      console.log(`[align] Using character-level LCS alignment for language: ${lang}`);
+      // ── Thai/CJK: Use Whisper timestamps directly, overlay script text proportionally ──
+      // Whisper gives accurate timestamps but may transcribe differently than the script.
+      // Instead of LCS (which fails for Thai), we proportionally distribute script text
+      // across Whisper's time ranges.
+      console.log(`[align] Using proportional script overlay for language: ${lang}`);
 
-      // Build character timeline from Whisper segments
-      const timeline = buildCharTimeline(segments);
-      if (timeline.length === 0) {
-        console.warn("[align] Empty character timeline, returning raw transcription");
+      // Get total duration and character count from Whisper
+      const audioEnd = segments[segments.length - 1].end;
+      const audioStart = segments[0].start;
+
+      // Build Whisper segment list with clean char counts
+      const whisperSegs: Array<{ start: number; end: number; text: string; charCount: number }> = [];
+      for (const seg of segments) {
+        const text = (seg.text || "").trim();
+        const chars = [...text].filter(c => c.trim()).length;
+        if (chars > 0 && seg.end > seg.start) {
+          whisperSegs.push({ start: seg.start, end: seg.end, text, charCount: chars });
+        }
+      }
+
+      if (whisperSegs.length === 0) {
+        console.warn("[align] No valid Whisper segments, returning raw transcription");
         return result;
       }
 
-      // Clean script: remove non-printable, keep only visible chars
-      const scriptClean = scriptText.replace(/[^\S ]/g, ' ').split('').filter(c => c.trim()).join('');
-      console.log(`[align] Timeline chars: ${timeline.length}, Script chars: ${scriptClean.length}`);
+      // Clean script text
+      const scriptClean = [...scriptText].filter(c => c.trim());
+      const totalScriptChars = scriptClean.length;
+      const totalWhisperChars = whisperSegs.reduce((sum, s) => sum + s.charCount, 0);
 
-      // Run LCS alignment — gives per-character timestamps from Whisper
-      const charTimestamps = alignScriptToTimeline(scriptClean, timeline);
+      console.log(`[align] Whisper segments: ${whisperSegs.length}, Whisper chars: ${totalWhisperChars}, Script chars: ${totalScriptChars}`);
 
-      // Clamp timestamps to actual audio bounds
-      const audioEnd = segments[segments.length - 1].end;
-      for (let i = 0; i < charTimestamps.length; i++) {
-        charTimestamps[i] = [
-          Math.max(0, Math.min(charTimestamps[i][0], audioEnd)),
-          Math.max(0, Math.min(charTimestamps[i][1], audioEnd)),
-        ];
-      }
-      console.log(`[align] Audio bounds: 0s - ${audioEnd.toFixed(2)}s`);
-
-      // Build segments directly from LCS timestamps, grouped by whitespace in script
-      // Each space-separated token = 1 segment
+      // Distribute script characters proportionally across Whisper segments
       const alignedSegments: Array<{
         start: number; end: number; text: string;
         words: Array<{ word: string; start: number; end: number }>;
       }> = [];
 
-      let cleanIdx = 0;
-      const scriptTokens = scriptText.split(/(\s+)/); // split keeping whitespace
+      let scriptOffset = 0;
+      for (const wseg of whisperSegs) {
+        // How many script chars does this segment get?
+        const ratio = wseg.charCount / totalWhisperChars;
+        const charsForSeg = Math.round(ratio * totalScriptChars);
 
-      for (const token of scriptTokens) {
-        if (!token.trim()) continue; // skip whitespace tokens
+        // Extract that many chars from the script
+        const endOffset = Math.min(scriptOffset + charsForSeg, totalScriptChars);
+        const segChars = scriptClean.slice(scriptOffset, endOffset);
+        const segText = segChars.join("");
+        scriptOffset = endOffset;
 
-        const tokenChars = [...token].filter(c => c.trim());
-        if (tokenChars.length === 0) continue;
+        if (!segText) continue;
 
-        const startCleanIdx = cleanIdx;
-        const endCleanIdx = cleanIdx + tokenChars.length - 1;
-        cleanIdx += tokenChars.length;
+        // Generate per-character word tokens with proportional timestamps
+        const segDur = wseg.end - wseg.start;
+        const charDur = segText.length > 0 ? segDur / segText.length : 0;
+        const words: Array<{ word: string; start: number; end: number }> = [];
 
-        if (startCleanIdx >= charTimestamps.length) break;
-        const safeEnd = Math.min(endCleanIdx, charTimestamps.length - 1);
-
-        const segStart = charTimestamps[startCleanIdx][0];
-        const segEnd = charTimestamps[safeEnd][1];
+        // Split into natural word-like chunks for Thai
+        // Approach: each character gets its own timestamp for fine-grained ASS generation
+        for (let ci = 0; ci < segText.length; ci++) {
+          words.push({
+            word: segText[ci],
+            start: Math.round((wseg.start + ci * charDur) * 1000) / 1000,
+            end: Math.round((wseg.start + (ci + 1) * charDur) * 1000) / 1000,
+          });
+        }
 
         alignedSegments.push({
-          start: Math.round(segStart * 1000) / 1000,
-          end: Math.round(segEnd * 1000) / 1000,
-          text: token,
-          words: [{ word: token, start: Math.round(segStart * 1000) / 1000, end: Math.round(segEnd * 1000) / 1000 }],
+          start: Math.round(wseg.start * 1000) / 1000,
+          end: Math.round(wseg.end * 1000) / 1000,
+          text: segText,
+          words,
         });
       }
 
-      console.log(`[align] ✅ Char-level aligned: ${alignedSegments.length} segments`);
+      // Flush remaining script chars into last segment
+      if (scriptOffset < totalScriptChars && alignedSegments.length > 0) {
+        const last = alignedSegments[alignedSegments.length - 1];
+        const remaining = scriptClean.slice(scriptOffset).join("");
+        last.text += remaining;
+        // Extend words
+        const durPerChar = (last.end - last.start) / (last.text.length || 1);
+        last.words = [];
+        for (let ci = 0; ci < last.text.length; ci++) {
+          last.words.push({
+            word: last.text[ci],
+            start: Math.round((last.start + ci * durPerChar) * 1000) / 1000,
+            end: Math.round((last.start + (ci + 1) * durPerChar) * 1000) / 1000,
+          });
+        }
+      }
+
+      console.log(`[align] ✅ Proportional aligned: ${alignedSegments.length} segments, audio: ${audioStart.toFixed(2)}s - ${audioEnd.toFixed(2)}s`);
 
       const alignedOutput: Record<string, unknown> = {
         segments: alignedSegments,
