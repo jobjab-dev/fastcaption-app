@@ -276,6 +276,17 @@ export async function runAlignment(
       const chunks = segments.map(s => ({ start: s.start, end: s.end }));
       const { adjustedTimestamps, chunkAssignments } = reassignByChunkBoundaries(charTimestamps, chunks);
 
+      // Clamp all timestamps to actual Whisper audio bounds (never exceed real audio duration)
+      const audioStart = segments[0].start;
+      const audioEnd = segments[segments.length - 1].end;
+      for (let i = 0; i < adjustedTimestamps.length; i++) {
+        adjustedTimestamps[i] = [
+          Math.max(audioStart, Math.min(adjustedTimestamps[i][0], audioEnd)),
+          Math.max(audioStart, Math.min(adjustedTimestamps[i][1], audioEnd)),
+        ];
+      }
+      console.log(`[align] Audio bounds: ${audioStart.toFixed(2)}s - ${audioEnd.toFixed(2)}s`);
+
       // Build aligned output with proper segment grouping
       const alignedOutput = buildAlignedOutput(scriptText, adjustedTimestamps, chunkAssignments, lang);
       (alignedOutput as Record<string, unknown>).original_script = scriptText;
