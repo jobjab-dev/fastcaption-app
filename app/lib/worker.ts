@@ -269,31 +269,61 @@ export async function runAlignment(
       const scriptClean = scriptText.replace(/[^\S ]/g, ' ').split('').filter(c => c.trim()).join('');
       console.log(`[align] Timeline chars: ${timeline.length}, Script chars: ${scriptClean.length}`);
 
-      // Run LCS alignment
+      // Run LCS alignment — gives per-character timestamps from Whisper
       const charTimestamps = alignScriptToTimeline(scriptClean, timeline);
 
-      // Build chunk boundaries from original segments for reassignment
-      const chunks = segments.map(s => ({ start: s.start, end: s.end }));
-      const { adjustedTimestamps, chunkAssignments } = reassignByChunkBoundaries(charTimestamps, chunks);
-
-      // Clamp all timestamps to actual Whisper audio bounds (never exceed real audio duration)
-      const audioStart = segments[0].start;
+      // Clamp timestamps to actual audio bounds
       const audioEnd = segments[segments.length - 1].end;
-      for (let i = 0; i < adjustedTimestamps.length; i++) {
-        adjustedTimestamps[i] = [
-          Math.max(audioStart, Math.min(adjustedTimestamps[i][0], audioEnd)),
-          Math.max(audioStart, Math.min(adjustedTimestamps[i][1], audioEnd)),
+      for (let i = 0; i < charTimestamps.length; i++) {
+        charTimestamps[i] = [
+          Math.max(0, Math.min(charTimestamps[i][0], audioEnd)),
+          Math.max(0, Math.min(charTimestamps[i][1], audioEnd)),
         ];
       }
-      console.log(`[align] Audio bounds: ${audioStart.toFixed(2)}s - ${audioEnd.toFixed(2)}s`);
+      console.log(`[align] Audio bounds: 0s - ${audioEnd.toFixed(2)}s`);
 
-      // Build aligned output with proper segment grouping
-      const alignedOutput = buildAlignedOutput(scriptText, adjustedTimestamps, chunkAssignments, lang);
-      (alignedOutput as Record<string, unknown>).original_script = scriptText;
-      (alignedOutput as Record<string, unknown>).alignment_model = result.modelUsed;
+      // Build segments directly from LCS timestamps, grouped by whitespace in script
+      // Each space-separated token = 1 segment
+      const alignedSegments: Array<{
+        start: number; end: number; text: string;
+        words: Array<{ word: string; start: number; end: number }>;
+      }> = [];
 
-      const alignedSegments = (alignedOutput as Record<string, unknown>).segments as Array<unknown>;
+      let cleanIdx = 0;
+      const scriptTokens = scriptText.split(/(\s+)/); // split keeping whitespace
+
+      for (const token of scriptTokens) {
+        if (!token.trim()) continue; // skip whitespace tokens
+
+        const tokenChars = [...token].filter(c => c.trim());
+        if (tokenChars.length === 0) continue;
+
+        const startCleanIdx = cleanIdx;
+        const endCleanIdx = cleanIdx + tokenChars.length - 1;
+        cleanIdx += tokenChars.length;
+
+        if (startCleanIdx >= charTimestamps.length) break;
+        const safeEnd = Math.min(endCleanIdx, charTimestamps.length - 1);
+
+        const segStart = charTimestamps[startCleanIdx][0];
+        const segEnd = charTimestamps[safeEnd][1];
+
+        alignedSegments.push({
+          start: Math.round(segStart * 1000) / 1000,
+          end: Math.round(segEnd * 1000) / 1000,
+          text: token,
+          words: [{ word: token, start: Math.round(segStart * 1000) / 1000, end: Math.round(segEnd * 1000) / 1000 }],
+        });
+      }
+
       console.log(`[align] ✅ Char-level aligned: ${alignedSegments.length} segments`);
+
+      const alignedOutput: Record<string, unknown> = {
+        segments: alignedSegments,
+        language: lang,
+        original_script: scriptText,
+        alignment_model: result.modelUsed,
+      };
 
       return {
         ...result,
