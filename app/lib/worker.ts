@@ -249,7 +249,50 @@ export async function runAlignment(
       return result;
     }
 
-    // Step 2: Extract all Whisper words with their REAL timestamps
+    // Detect if language needs character-level alignment (no word boundaries)
+    const charLevelLangs = ["th", "thai", "zh", "chinese", "ja", "japanese", "ko", "korean", "lo", "my", "km"];
+    const lang = (options.language || "").toLowerCase();
+    const useCharLevel = charLevelLangs.some(l => lang.startsWith(l));
+
+    if (useCharLevel) {
+      // ── Character-level LCS alignment (Thai/CJK) ──
+      console.log(`[align] Using character-level LCS alignment for language: ${lang}`);
+
+      // Build character timeline from Whisper segments
+      const timeline = buildCharTimeline(segments);
+      if (timeline.length === 0) {
+        console.warn("[align] Empty character timeline, returning raw transcription");
+        return result;
+      }
+
+      // Clean script: remove non-printable, keep only visible chars
+      const scriptClean = scriptText.replace(/[^\S ]/g, ' ').split('').filter(c => c.trim()).join('');
+      console.log(`[align] Timeline chars: ${timeline.length}, Script chars: ${scriptClean.length}`);
+
+      // Run LCS alignment
+      const charTimestamps = alignScriptToTimeline(scriptClean, timeline);
+
+      // Build chunk boundaries from original segments for reassignment
+      const chunks = segments.map(s => ({ start: s.start, end: s.end }));
+      const { adjustedTimestamps, chunkAssignments } = reassignByChunkBoundaries(charTimestamps, chunks);
+
+      // Build aligned output with proper segment grouping
+      const alignedOutput = buildAlignedOutput(scriptText, adjustedTimestamps, chunkAssignments, lang);
+      (alignedOutput as Record<string, unknown>).original_script = scriptText;
+      (alignedOutput as Record<string, unknown>).alignment_model = result.modelUsed;
+
+      const alignedSegments = (alignedOutput as Record<string, unknown>).segments as Array<unknown>;
+      console.log(`[align] ✅ Char-level aligned: ${alignedSegments.length} segments`);
+
+      return {
+        ...result,
+        resultJson: JSON.stringify(alignedOutput, null, 2),
+        segments: alignedSegments.length,
+      };
+    }
+
+    // ── Word-level alignment (English and other space-delimited languages) ──
+    // Extract all Whisper words with their REAL timestamps
     const whisperWords: Array<{ word: string; start: number; end: number }> = [];
     for (const seg of segments) {
       if (seg.words && seg.words.length > 0) {
