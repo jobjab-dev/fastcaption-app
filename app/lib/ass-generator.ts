@@ -275,8 +275,22 @@ export function extractWords(data: WhisperData, lang?: string): ExtractedWord[] 
 
     // Step 0b: Detect severely compressed timestamps (>30% zero-dur)
     const zeroCount = wordsData.filter(w => (w.end || 0) - (w.start || 0) <= 0.001).length;
+    const isCompressed = totalTokens > 0 && zeroCount / totalTokens > 0.30;
 
-    if (totalTokens > 0 && zeroCount / totalTokens > 0.30) {
+    // ──── FAST PATH: Word-level tokens with good timestamps ────
+    // When tokens are proper words/phrases (not char-level) and timestamps
+    // are not compressed, use them directly. No post-processing needed.
+    if (!isCharLevel && !isCompressed) {
+      for (const w of wordsData) {
+        const word = (w.word || "").trim();
+        if (word) {
+          result.push({ word, start: w.start || 0, end: w.end || 0 });
+        }
+      }
+      continue;
+    }
+
+    if (isCompressed) {
       if (segEnd <= segStart + 0.01) {
         if (zeroCount === totalTokens) continue;
         const segIdx = data.segments.indexOf(seg);
@@ -518,78 +532,7 @@ export function extractWords(data: WhisperData, lang?: string): ExtractedWord[] 
   }
 
   // Post-process: filter noise chars
-  const filtered = result.filter(w => ![...w.word].every(c => NOISE_CHARS.has(c)));
-
-  // Post-process: fix unreasonable durations
-  const MAX_DURATION_PER_CHAR = 1.5;
-  for (let i = 0; i < filtered.length; i++) {
-    const w = filtered[i];
-    const duration = w.end - w.start;
-    const wordLen = Math.max(w.word.length, 1);
-    const maxDur = wordLen * MAX_DURATION_PER_CHAR;
-
-    if (duration > maxDur) {
-      let reasonableEnd = w.start + wordLen * 0.15;
-      if (i + 1 < filtered.length && filtered[i + 1].start > w.start) {
-        const nextStart = filtered[i + 1].start;
-        if (nextStart - w.start <= maxDur) reasonableEnd = nextStart;
-      }
-      filtered[i].end = reasonableEnd;
-    }
-  }
-
-  // Post-process: fix compressed timestamp zones
-  const MIN_DUR_PER_CHAR = 0.03;
-  const MIN_ZONE_SIZE = 3;
-  const compressed = filtered.map(w => {
-    const wordLen = Math.max(w.word.length, 1);
-    const dur = w.end - w.start;
-    return dur <= 0.001 || (dur < wordLen * MIN_DUR_PER_CHAR && wordLen >= 2);
-  });
-
-  let idx = 0;
-  while (idx < filtered.length) {
-    if (compressed[idx]) {
-      let zoneStart = idx;
-      while (idx < filtered.length && compressed[idx]) idx++;
-      let zoneEnd = idx - 1;
-
-      if (zoneEnd - zoneStart + 1 >= MIN_ZONE_SIZE) {
-        const zoneTime = filtered[zoneStart].start;
-        while (zoneStart > 0) {
-          const prev = filtered[zoneStart - 1];
-          if (Math.abs(prev.end - zoneTime) < 0.01) zoneStart--;
-          else break;
-        }
-
-        const tBefore = zoneStart > 0 ? filtered[zoneStart - 1].end : 0;
-        let tAfter: number | null = null;
-        for (let k = zoneEnd + 1; k < filtered.length; k++) {
-          if (filtered[k].end - filtered[k].start > 0.01) {
-            tAfter = filtered[k].start;
-            break;
-          }
-        }
-
-        if (tAfter !== null && tAfter > tBefore) {
-          let totalCharsInZone = 0;
-          for (let j = zoneStart; j <= zoneEnd; j++) totalCharsInZone += filtered[j].word.length;
-          const durPerChar = (tAfter - tBefore) / Math.max(totalCharsInZone, 1);
-          let charPos = 0;
-          for (let j = zoneStart; j <= zoneEnd; j++) {
-            const wc = filtered[j].word.length;
-            filtered[j].start = Math.round((tBefore + charPos * durPerChar) * 1000) / 1000;
-            filtered[j].end = Math.round((tBefore + (charPos + wc) * durPerChar) * 1000) / 1000;
-            charPos += wc;
-          }
-        }
-      }
-    } else {
-      idx++;
-    }
-  }
-
-  return filtered;
+  return result.filter(w => ![...w.word].every(c => NOISE_CHARS.has(c)));
 }
 
 // ============ Caption Builders ============
@@ -689,7 +632,16 @@ export function buildCaptionsByPause(
   }
 
   // Post-process: merge orphan captions (≤ 1 word) back into previous line
-  return mergeOrphanCaptions(caps, maxChars);
+  const merged = mergeOrphanCaptions(caps, maxChars);
+
+  // Post-process: clamp end to not exceed next caption's start (prevent overlap)
+  for (let i = 0; i < merged.length - 1; i++) {
+    if (merged[i][1] > merged[i + 1][0]) {
+      merged[i][1] = merged[i + 1][0];
+    }
+  }
+
+  return merged;
 }
 
 /**
@@ -754,7 +706,14 @@ export async function buildCaptionsByPauseAI(
         console.warn(`[ass] ⚠️ AI caption char coverage too low: ${totalCaptionChars}/${totalWordChars} (${(charCoverage * 100).toFixed(1)}%). Falling back.`);
       } else {
         console.log(`[ass] AI segmentation: ${caps.length} captions (char coverage: ${(charCoverage * 100).toFixed(1)}%)`);
-        return mergeOrphanCaptions(caps, maxChars);
+        const aiMerged = mergeOrphanCaptions(caps, maxChars);
+        // Clamp end to not exceed next caption's start (prevent overlap)
+        for (let i = 0; i < aiMerged.length - 1; i++) {
+          if (aiMerged[i][1] > aiMerged[i + 1][0]) {
+            aiMerged[i][1] = aiMerged[i + 1][0];
+          }
+        }
+        return aiMerged;
       }
     }
   }
@@ -990,10 +949,39 @@ Style: ${styleName},${fontName},${fontSize},${primaryColor},&H000000FF,${outline
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 
+  // Calculate max chars per visual line based on resolution and font size
+  // Portrait 1080p at font 64 ≈ 16 Thai chars per line
+  const maxCharsPerLine = Math.max(Math.floor((resX - 160) / (fontSize * 0.85)), 10);
+
   for (let i = 0; i < capsCs.length; i++) {
-    const [stCs, enCs, text] = capsCs[i];
+    const [stCs, enCs, rawText] = capsCs[i];
     const layer = (i + 1) % 10;
-    content += `Dialogue: ${layer},${assTimestamp(stCs)},${assTimestamp(enCs)},${styleName},,0,0,0,,${escapeAssText(text)}\n`;
+    let text = escapeAssText(rawText);
+
+    // Insert \N line breaks if text exceeds one visual line
+    if (text.length > maxCharsPerLine) {
+      const words = segmentWords(text, lang);
+      const lines: string[] = [];
+      let currentLine = "";
+
+      for (const word of words) {
+        const testLine = currentLine
+          ? (isNonSpaceScript(currentLine) && isNonSpaceScript(word) ? currentLine + word : currentLine + " " + word)
+          : word;
+
+        if (currentLine && testLine.length > maxCharsPerLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+
+      text = lines.join("\\N");
+    }
+
+    content += `Dialogue: ${layer},${assTimestamp(stCs)},${assTimestamp(enCs)},${styleName},,0,0,0,,${text}\n`;
   }
 
   return { content, captionCount: capsCs.length };

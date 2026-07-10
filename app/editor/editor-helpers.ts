@@ -1,5 +1,6 @@
 // Editor helper: transcribe, types, utils
 import { createSupabaseBrowserClient } from "@/app/lib/supabase/client";
+import { needsConversion, convertToMp3, formatFileSize } from "@/app/lib/ffmpeg-convert";
 
 export interface Cap { id: number; start: number; end: number; text: string; }
 export interface FontStyle { fontName: string; fontSize: number; color: string; outline: string; outlineW: number; shadow: number; bold: boolean; italic: boolean; }
@@ -13,25 +14,38 @@ export const hex2ass = (h: string) => `&H00${h.slice(5,7)}${h.slice(3,5)}${h.sli
 export const DEFAULT_FONT: FontStyle = { fontName:"Arial", fontSize:64, color:"#FFFFFF", outline:"#111111", outlineW:3, shadow:0, bold:false, italic:false };
 
 /** Upload file to Supabase → call /api/transcribe → poll → return parsed captions.
- *  Pass an already-converted audio file (mp3) if the source was video. */
+ *  Automatically converts video → MP3 client-side before uploading (avoids Supabase size limits). */
 export async function transcribeVideo(
   uploadFile: File,
   language: string,
   onStatus: (msg: string) => void,
 ): Promise<Cap[]> {
 
+  // Convert video → mp3 client-side to avoid hitting Supabase 50MB upload limit
+  let fileToUpload = uploadFile;
+  if (needsConversion(uploadFile)) {
+    onStatus(`Converting video (${formatFileSize(uploadFile.size)})...`);
+    try {
+      fileToUpload = await convertToMp3(uploadFile, (p) => {
+        onStatus(`🎬 ${p.message}`);
+      });
+    } catch {
+      throw new Error("Video conversion failed — try uploading an MP3/WAV audio file instead");
+    }
+  }
+
   onStatus("Uploading...");
   const supabase = createSupabaseBrowserClient();
-  const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const safeName = fileToUpload.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const storagePath = `uploads/${Date.now()}_${safeName}`;
-  const { error: upErr } = await supabase.storage.from("audio-uploads").upload(storagePath, uploadFile, { contentType: uploadFile.type || "audio/mpeg", upsert: false });
+  const { error: upErr } = await supabase.storage.from("audio-uploads").upload(storagePath, fileToUpload, { contentType: fileToUpload.type || "audio/mpeg", upsert: false });
   if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
 
   onStatus("Processing...");
   const res = await fetch("/api/transcribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ storagePath, fileName: uploadFile.name, fileSize: uploadFile.size, fileType: uploadFile.type || "audio/mpeg", language, mode: "transcribe" }),
+    body: JSON.stringify({ storagePath, fileName: fileToUpload.name, fileSize: fileToUpload.size, fileType: fileToUpload.type || "audio/mpeg", language, mode: "transcribe" }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);

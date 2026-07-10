@@ -139,8 +139,8 @@ export async function POST(request: NextRequest) {
     // 7. Run Process
     const audioUrl = signedUrlData.signedUrl;
     const processResult = mode === "align"
-      ? await runAlignment(audioUrl, scriptText, { language, timestampMode })
-      : await runTranscription(audioUrl, { language, timestampMode });
+      ? await runAlignment(audioUrl, scriptText, { language, timestampMode, abortSignal: request.signal })
+      : await runTranscription(audioUrl, { language, timestampMode, abortSignal: request.signal });
 
     // 8. Handle Result
     if (processResult.success && processResult.resultJson) {

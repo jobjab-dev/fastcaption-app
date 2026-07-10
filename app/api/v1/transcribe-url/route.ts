@@ -4,6 +4,8 @@ import { calculateCredits, deductCredits, getUserCredits } from "@/app/lib/credi
 import { estimateAudioDuration, runTranscription, runAlignment } from "@/app/lib/worker";
 import { createSupabaseAdmin } from "@/app/lib/supabase/admin";
 
+export const maxDuration = 900; // 15 minutes
+
 /**
  * POST /api/v1/transcribe-url
  * 
@@ -153,8 +155,8 @@ export async function POST(request: NextRequest) {
 
     // 7. Run Process
     const processResult = mode === "align"
-      ? await runAlignment(audioUrl, scriptText, { language, timestampMode })
-      : await runTranscription(audioUrl, { language, timestampMode });
+      ? await runAlignment(audioUrl, scriptText, { language, timestampMode, durationHint: durationSec, abortSignal: request.signal })
+      : await runTranscription(audioUrl, { language, timestampMode, durationHint: durationSec, abortSignal: request.signal });
 
     // 8. Handle Result
     if (processResult.success && processResult.resultJson) {

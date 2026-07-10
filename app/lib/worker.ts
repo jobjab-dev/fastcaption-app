@@ -41,6 +41,8 @@ export function estimateAudioDuration(fileSize: number, mimeType: string): numbe
 interface TranscriptionOptions {
   language: string;
   timestampMode?: "chunk" | "word";  // chunk = averaged (default), word = character-level from Whisper
+  durationHint?: number;             // estimated audio duration in seconds (for GPU timeout)
+  abortSignal?: AbortSignal;         // from request.signal, to cancel if client disconnects
 }
 
 interface TranscriptionResult {
@@ -145,19 +147,29 @@ async function runWithFallbackModel(
   for (const batchSize of batchSizes) {
     const startTime = Date.now();
 
-    const tsMode = options.timestampMode || "chunk";
+    // Force chunk mode for languages without word boundaries (Thai, CJK)
+    // Word mode always fails for Thai (Whisper can't predict ending timestamps)
+    const charLevelLangs = ["th", "thai", "zh", "chinese", "ja", "japanese", "ko", "korean"];
+    const forceChunk = charLevelLangs.some(l => language.toLowerCase().startsWith(l));
+    const effectiveTsMode = forceChunk ? "chunk" : (options.timestampMode || "chunk");
+
     const input: Record<string, unknown> = {
       audio: audioUrl,
       task: "transcribe",
-      timestamp: tsMode,
+      timestamp: effectiveTsMode,
       batch_size: batchSize,
       language,
     };
 
-    console.log(`[replicate-fallback] Running with timestamp=${tsMode}, batch_size=${batchSize}, language=${language}`);
+    console.log(`[replicate-fallback] Running with timestamp=${effectiveTsMode}, batch_size=${batchSize}, language=${language}`);
 
     let lastStatus = "";
     let lastLogLength = 0;
+
+    // GPU timeout: max(60s, durationHint * 3) — ป้องกัน GPU ค้างแล้วเสียเงิน
+    const durationEst = options.durationHint || 300;
+    const gpuTimeoutSec = Math.max(60, durationEst * 3);
+    console.log(`[replicate-fallback] ⏱ GPU timeout: ${gpuTimeoutSec}s (audio ~${durationEst}s)`);
 
     try {
       const output = await replicate.run(
@@ -168,10 +180,30 @@ async function runWithFallbackModel(
         },
         (prediction) => {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+          // เช็ค Client disconnect — ถ้า Python script หลุด/timeout ให้ cancel ทันที
+          if (options.abortSignal?.aborted) {
+            console.error(`[replicate-fallback] ❌ Client disconnected! Canceling prediction...`);
+            if (prediction.id) {
+              replicate.predictions.cancel(prediction.id).catch(() => {});
+            }
+            throw new Error("Client aborted request");
+          }
+
           if (prediction.status !== lastStatus) {
             lastStatus = prediction.status;
             const gpuTime = prediction.metrics?.predict_time ? ` (GPU: ${prediction.metrics.predict_time.toFixed(1)}s)` : "";
             console.log(`[replicate-fallback] ⏱ ${elapsed}s — Status: ${prediction.status}${gpuTime}`);
+          }
+          // เช็ค GPU timeout — ถ้า GPU ทำงานนานเกินไปให้ abort
+          const gpuTime = prediction.metrics?.predict_time || 0;
+          if (gpuTime > gpuTimeoutSec) {
+            console.error(`[replicate-fallback] ❌ GPU timeout! ${gpuTime.toFixed(1)}s > ${gpuTimeoutSec}s limit`);
+            // Cancel prediction on Replicate to stop billing
+            if (prediction.id) {
+              replicate.predictions.cancel(prediction.id).catch(() => {});
+            }
+            throw new Error(`GPU timeout: ${gpuTime.toFixed(1)}s exceeded ${gpuTimeoutSec}s limit`);
           }
           if (prediction.logs && prediction.logs.length > lastLogLength) {
             const newLogs = prediction.logs.slice(lastLogLength).trim();
@@ -220,15 +252,20 @@ async function runWithFallbackModel(
   return { success: false, error: "All batch sizes exhausted" };
 }
 
-/** Run forced alignment — transcribe first, then align script text to transcription timestamps. */
+/** Run forced alignment — transcribe first, then fix wrong words using script text.
+ *
+ * Strategy: Keep Whisper's timestamps and segment structure 100% intact.
+ * Only fix text errors by comparing Whisper output with the provided script
+ * and doing find-replace of wrong words/phrases.
+ */
 export async function runAlignment(
   audioUrl: string,
   scriptText: string,
   options: TranscriptionOptions
 ): Promise<TranscriptionResult> {
-  console.log(`[align] Starting forced alignment (script: ${scriptText.length} chars)`);
+  console.log(`[align] Starting alignment (script: ${scriptText.length} chars)`);
 
-  // Step 1: Get transcription with word timestamps from Whisper
+  // Step 1: Get raw transcription from Whisper
   const result = await runTranscription(audioUrl, options);
   if (!result.success || !result.resultJson) return result;
 
@@ -249,168 +286,42 @@ export async function runAlignment(
       return result;
     }
 
-    // Detect if language needs character-level alignment (no word boundaries)
-    const charLevelLangs = ["th", "thai", "zh", "chinese", "ja", "japanese", "ko", "korean", "lo", "my", "km"];
-    const lang = (options.language || "").toLowerCase();
-    const useCharLevel = charLevelLangs.some(l => lang.startsWith(l));
+    // Step 2: Build corrections (wrong word → correct word)
+    const whisperText = segments.map(s => (s.text || "").trim()).join(" ");
+    const corrections = buildTextCorrections(whisperText, scriptText);
 
-    if (useCharLevel) {
-      // ── Thai/CJK: Distribute script tokens across Whisper timestamps ──
-      // Script uses spaces to separate phrases (e.g. "ไอแซก นิวตัน คงจะฉีกตำราตัวเองทิ้ง")
-      // Each space-separated token is a complete phrase — never cut mid-token.
-      // Distribute tokens proportionally across Whisper segments' time ranges.
-      console.log(`[align] Using token-based proportional overlay for language: ${lang}`);
+    console.log(`[align] Found ${corrections.length} corrections to apply`);
 
-      const audioEnd = segments[segments.length - 1].end;
-      const audioStart = segments[0].start;
-
-      // Split script into space-separated tokens (complete phrases)
-      const scriptTokens = scriptText.split(/\s+/).filter(t => t.trim());
-      if (scriptTokens.length === 0) {
-        console.warn("[align] No script tokens, returning raw transcription");
-        return result;
-      }
-
-      // Build Whisper segment list
-      const whisperSegs: Array<{ start: number; end: number; charCount: number }> = [];
-      for (const seg of segments) {
-        const text = (seg.text || "").trim();
-        const chars = [...text].filter(c => c.trim()).length;
-        if (chars > 0 && seg.end > seg.start) {
-          whisperSegs.push({ start: seg.start, end: seg.end, charCount: chars });
-        }
-      }
-
-      if (whisperSegs.length === 0) {
-        console.warn("[align] No valid Whisper segments, returning raw transcription");
-        return result;
-      }
-
-      const totalWhisperChars = whisperSegs.reduce((sum, s) => sum + s.charCount, 0);
-      const totalScriptChars = scriptTokens.reduce((sum, t) => sum + t.length, 0);
-
-      console.log(`[align] Whisper segs: ${whisperSegs.length}, Whisper chars: ${totalWhisperChars}, Script tokens: ${scriptTokens.length}, Script chars: ${totalScriptChars}`);
-
-      // Distribute script tokens across Whisper segments proportionally
-      const alignedSegments: Array<{
-        start: number; end: number; text: string;
-        words: Array<{ word: string; start: number; end: number }>;
-      }> = [];
-
-      let tokenIdx = 0;
-      let charBudgetCarry = 0; // carry fractional chars between segments
-
-      for (let si = 0; si < whisperSegs.length; si++) {
-        const wseg = whisperSegs[si];
-        const isLast = si === whisperSegs.length - 1;
-
-        // How many script chars should this Whisper segment cover?
-        const exactChars = (wseg.charCount / totalWhisperChars) * totalScriptChars + charBudgetCarry;
-
-        // Collect tokens until we reach the char budget
-        const segTokens: string[] = [];
-        let segChars = 0;
-
-        while (tokenIdx < scriptTokens.length) {
-          const token = scriptTokens[tokenIdx];
-
-          if (isLast) {
-            // Last Whisper segment takes ALL remaining tokens
-            segTokens.push(token);
-            segChars += token.length;
-            tokenIdx++;
-            continue;
-          }
-
-          // Would adding this token exceed our budget?
-          if (segChars + token.length > exactChars && segTokens.length > 0) {
-            break; // stop, this token goes to next segment
-          }
-
-          segTokens.push(token);
-          segChars += token.length;
-          tokenIdx++;
-        }
-
-        charBudgetCarry = exactChars - segChars;
-
-        if (segTokens.length === 0) continue;
-
-        // Each token becomes a "word" with proportional timestamp within this segment
-        const segDur = wseg.end - wseg.start;
-        const totalTokenChars = segTokens.reduce((s, t) => s + t.length, 0);
-        const words: Array<{ word: string; start: number; end: number }> = [];
-        let timeOffset = wseg.start;
-
-        for (const token of segTokens) {
-          const tokenDur = totalTokenChars > 0 ? (token.length / totalTokenChars) * segDur : segDur / segTokens.length;
-          words.push({
-            word: token,
-            start: Math.round(timeOffset * 1000) / 1000,
-            end: Math.round((timeOffset + tokenDur) * 1000) / 1000,
-          });
-          timeOffset += tokenDur;
-        }
-
-        alignedSegments.push({
-          start: Math.round(wseg.start * 1000) / 1000,
-          end: Math.round(wseg.end * 1000) / 1000,
-          text: segTokens.join(" "),
-          words,
-        });
-      }
-
-      console.log(`[align] ✅ Token-aligned: ${alignedSegments.length} segments, audio: ${audioStart.toFixed(2)}s - ${audioEnd.toFixed(2)}s`);
-
-      const alignedOutput: Record<string, unknown> = {
-        segments: alignedSegments,
-        language: lang,
-        original_script: scriptText,
-        alignment_model: result.modelUsed,
-      };
-
-      return {
-        ...result,
-        resultJson: JSON.stringify(alignedOutput, null, 2),
-        segments: alignedSegments.length,
-      };
-    }
-
-    // ── Word-level alignment (English and other space-delimited languages) ──
-    // Extract all Whisper words with their REAL timestamps
-    const whisperWords: Array<{ word: string; start: number; end: number }> = [];
+    // Step 3: Apply corrections to each segment's text
+    // This only changes text content — timestamps and structure stay the same
+    let totalFixed = 0;
     for (const seg of segments) {
-      if (seg.words && seg.words.length > 0) {
-        for (const w of seg.words) {
-          whisperWords.push({ word: w.word, start: w.start, end: w.end });
+      let text = seg.text || "";
+      for (const [wrong, correct] of corrections) {
+        if (text.includes(wrong)) {
+          text = text.split(wrong).join(correct);
+          totalFixed++;
         }
       }
+      seg.text = text;
     }
 
-    if (whisperWords.length === 0) {
-      console.warn("[align] No words from Whisper, returning raw transcription");
-      return result;
-    }
+    console.log(`[align] ✅ Applied ${totalFixed} text fixes across ${segments.length} segments`);
 
-    console.log(`[align] Whisper words: ${whisperWords.length}, Script words: ${scriptText.split(/\s+/).filter(w => w).length}`);
-
-    // Step 3: Simple word-to-word matching — use Whisper timestamps directly
-    const scriptWords = scriptText.split(/\s+/).filter(w => w);
-    const alignedSegments = alignWordToWord(scriptWords, whisperWords);
-
-    console.log(`[align] ✅ Aligned: ${alignedSegments.length} segments (word-level, Whisper timestamps)`);
-
-    const alignedOutput: Record<string, unknown> = {
-      segments: alignedSegments,
-      language: data.language || options.language,
+    // Return with corrected text but original timestamps
+    const lang = (options.language || "").toLowerCase();
+    const correctedOutput: Record<string, unknown> = {
+      segments,
+      language: data.language || lang,
+      scriptText, // Include script text for downstream use
       original_script: scriptText,
       alignment_model: result.modelUsed,
     };
 
     return {
       ...result,
-      resultJson: JSON.stringify(alignedOutput, null, 2),
-      segments: alignedSegments.length,
+      resultJson: JSON.stringify(correctedOutput, null, 2),
+      segments: segments.length,
     };
   } catch (error) {
     console.error("[align] Alignment failed, returning raw transcription:", error);
@@ -421,6 +332,142 @@ export async function runAlignment(
     } catch { /* ignore */ }
     return result;
   }
+}
+
+/**
+ * Compare Whisper text with script text and find wrong→correct word pairs.
+ *
+ * Uses space-tokenized LCS (Longest Common Subsequence) to find differences.
+ * Strategy:
+ * - If a wrong word doesn't appear in the script at all → safe global replace
+ * - If it does appear in the script (ambiguous) → add context for safety
+ */
+function buildTextCorrections(whisperText: string, scriptText: string): Array<[string, string]> {
+  // Tokenize by spaces (works for all languages since Whisper adds spaces)
+  const wTokens = whisperText.split(/\s+/).filter(t => t);
+  const sTokens = scriptText.split(/\s+/).filter(t => t);
+
+  // Find LCS (Longest Common Subsequence) matching
+  const opcodes = diffWords(wTokens, sTokens);
+  const corrections: Array<[string, string]> = [];
+
+  for (const [tag, i1, i2, j1, j2] of opcodes) {
+    if (tag !== "replace") continue;
+
+    const wrong = wTokens.slice(i1, i2).join(" ");
+    const correct = sTokens.slice(j1, j2).join(" ");
+
+    // Skip single-character replacements (too dangerous)
+    if (wrong.length < 2 || correct.length < 2) continue;
+    // Skip very long replacements (sentence-level shifts)
+    if (wrong.length > 40 || correct.length > 40) continue;
+    // Skip purely numeric → word conversions (e.g. "10" → "สิบ")
+    // Digits are valid Whisper transcription, not errors
+    if (/^\d+$/.test(wrong.trim())) continue;
+
+    // Check: does the wrong text exist in the correct script?
+    if (!scriptText.includes(wrong)) {
+      // Pure Whisper error — safe to replace globally
+      corrections.push([wrong, correct]);
+    } else {
+      // Ambiguous — add surrounding context
+      const ctxBefore = wTokens.slice(Math.max(0, i1 - 2), i1).join(" ");
+      const ctxAfter = wTokens.slice(i2, Math.min(wTokens.length, i2 + 2)).join(" ");
+      const sep = " ";
+      const wrongCtx = (ctxBefore ? ctxBefore + sep : "") + wrong + (ctxAfter ? sep + ctxAfter : "");
+      const correctCtx = (ctxBefore ? ctxBefore + sep : "") + correct + (ctxAfter ? sep + ctxAfter : "");
+      if (wrongCtx !== correctCtx) {
+        corrections.push([wrongCtx, correctCtx]);
+      }
+    }
+  }
+
+  return corrections;
+}
+
+/**
+ * Simple word-level diff — returns opcodes like Python's difflib.SequenceMatcher.
+ * Each opcode is [tag, i1, i2, j1, j2] where tag is "equal"|"replace"|"insert"|"delete".
+ */
+function diffWords(a: string[], b: string[]): Array<["equal" | "replace" | "insert" | "delete", number, number, number, number]> {
+  // Build LCS table
+  const m = a.length, n = b.length;
+  // For very long sequences, use a simpler approach
+  if (m * n > 10_000_000) {
+    // Fallback: just return the whole thing as one replace
+    return [["replace", 0, m, 0, n]];
+  }
+
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  // Backtrack to get matching pairs
+  const matches: Array<[number, number]> = [];
+  let i = m, j = n;
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === b[j - 1]) {
+      matches.unshift([i - 1, j - 1]);
+      i--; j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+
+  // Convert matches to opcodes
+  const opcodes: Array<["equal" | "replace" | "insert" | "delete", number, number, number, number]> = [];
+  let ai = 0, bi = 0;
+
+  for (const [mi, mj] of matches) {
+    // Gap before this match
+    if (ai < mi || bi < mj) {
+      if (ai < mi && bi < mj) {
+        opcodes.push(["replace", ai, mi, bi, mj]);
+      } else if (ai < mi) {
+        opcodes.push(["delete", ai, mi, bi, bi]);
+      } else {
+        opcodes.push(["insert", ai, ai, bi, mj]);
+      }
+    }
+    // The match itself
+    opcodes.push(["equal", mi, mi + 1, mj, mj + 1]);
+    ai = mi + 1;
+    bi = mj + 1;
+  }
+
+  // Trailing gap
+  if (ai < m || bi < n) {
+    if (ai < m && bi < n) {
+      opcodes.push(["replace", ai, m, bi, n]);
+    } else if (ai < m) {
+      opcodes.push(["delete", ai, m, bi, bi]);
+    } else {
+      opcodes.push(["insert", ai, ai, bi, n]);
+    }
+  }
+
+  // Merge consecutive equal opcodes
+  const merged: typeof opcodes = [];
+  for (const op of opcodes) {
+    const last = merged[merged.length - 1];
+    if (last && last[0] === op[0] && last[0] === "equal" && last[2] === op[1] && last[4] === op[3]) {
+      last[2] = op[2];
+      last[4] = op[4];
+    } else {
+      merged.push([...op]);
+    }
+  }
+
+  return merged;
 }
 
 /**
